@@ -1,0 +1,7 @@
+string event_type
+string transaction_digest
+string event_sequence
+string module_name
+string package_id
+string parsed_json
+builtin_interfaces/Time timestamp 

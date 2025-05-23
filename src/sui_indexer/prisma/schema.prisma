@@ -1,0 +1,35 @@
+generator db {
+    provider             = "prisma-client-py"
+    interface           = "asyncio"
+    recursive_type_depth = 5
+}
+
+datasource db {
+    provider = "sqlite"
+    url      = env("DATABASE_URL")
+}
+
+model Cursor {
+    id          String   @id
+    eventSeq    String
+    txDigest    String
+    timestamp   DateTime @default(now())
+}
+
+model Escrow {
+    objectId    String   @id
+    sender      String?
+    recipient   String?
+    keyId       String?
+    itemId      String?
+    cancelled   Boolean  @default(false)
+    swapped     Boolean  @default(false)
+}
+
+model Locked {
+    objectId    String   @id
+    creator     String?
+    keyId       String?
+    itemId      String?
+    deleted     Boolean  @default(false)
+} 
