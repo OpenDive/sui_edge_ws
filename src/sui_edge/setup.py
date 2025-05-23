@@ -16,9 +16,6 @@ setup(
             ['launch/bridge_launch.py']),
         ('share/' + package_name + '/config',
             ['config/bridge_config.yaml']),
-        # Include all srv files
-        (os.path.join('share', package_name, 'srv'),
-            glob(os.path.join('srv', '*.srv'))),
     ],
     install_requires=[
         'setuptools',
