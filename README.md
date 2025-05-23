@@ -25,19 +25,62 @@ cd ~/sui_edge_ws/src
 git clone https://github.com/yourusername/sui_edge.git
 ```
 
-3. Install dependencies:
+3. Set up the Python virtual environment and install dependencies:
 ```bash
 cd ~/sui_edge_ws
 
+# Set up virtual environment and install dependencies
+source scripts/setup-venv.sh
+
 # Install ROS2 dependencies
 rosdep install --from-paths src --ignore-src -r -y
-
-# Install Python dependencies
-pip install -r requirements.txt
 ```
 
 4. Build the workspace:
 ```bash
+# Source ROS2
+source scripts/ros-source.sh
+
+# Build the workspace (the virtual environment settings will be used automatically)
+colcon build
+```
+
+5. Source the workspace:
+```bash
+source install/setup.bash
+```
+
+## Development
+
+When working on the project, always ensure you're using the virtual environment:
+
+1. Activate the environment:
+```bash
+cd ~/sui_edge_ws
+source setup.local  # This loads the virtual environment settings
+source install/setup.bash
+```
+
+2. After making changes, rebuild:
+```bash
+colcon build
+source install/setup.bash
+```
+
+## Troubleshooting
+
+If you encounter Python-related build issues:
+
+1. Ensure you're using the virtual environment:
+```bash
+which python3  # Should point to your venv
+echo $VIRTUAL_ENV  # Should show your venv path
+```
+
+2. If needed, clean and rebuild:
+```bash
+rm -rf build/ install/ log/
+source setup.local
 colcon build
 ```
 
