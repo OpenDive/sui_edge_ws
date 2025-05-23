@@ -23,7 +23,7 @@ install(PROGRAMS
 install(PROGRAMS
   scripts/setup_prisma.py
   DESTINATION lib/${PROJECT_NAME}
-  RENAME setup_prisma
+  RENAME prisma_setup
 )
 
 # Install Prisma schema

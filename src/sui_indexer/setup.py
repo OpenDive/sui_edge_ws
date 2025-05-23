@@ -36,7 +36,7 @@ setup(
     entry_points={
         'console_scripts': [
             'indexer_node = sui_indexer.indexer_node:main',
-            'setup_prisma = scripts.setup_prisma:main',
+            'prisma_setup = scripts.setup_prisma:main',
         ],
     },
 )
