@@ -4,8 +4,7 @@ import logging
 from pysui.sui.sui_config import SuiConfig
 from pysui.sui.sui_clients.sync_client import SuiClient
 from pysui.sui.sui_types.address import SuiAddress
-from pysui.sui.sui_builders.transaction_builder import TransactionBuilder
-from pysui.sui.sui_builders.subscription_builders import SubscribeTransaction
+from pysui.sui.sui_txn.transaction_builder import TransactionBuilder, ExecuteTransaction
 
 class SuiBlockchainClient:
     """Pure blockchain client for Sui network."""
@@ -66,13 +65,16 @@ class SuiBlockchainClient:
             raise RuntimeError("Client not initialized")
         
         try:
-            # Create transaction builder
-            builder = TransactionBuilder(self.client)
-            builder.add_transaction_bytes(tx_bytes)
-            builder.add_signature(signature)
+            # Create transaction builder and execute
+            builder = TransactionBuilder(
+                client=self.client,
+                tx_bytes=tx_bytes,
+                signatures=[signature]
+            )
             
-            # Execute transaction
+            # Execute transaction with wait for local execution
             result = builder.execute(wait_for_local_execution=True)
+            
             if not result.is_ok():
                 return {
                     "success": False,
@@ -102,11 +104,12 @@ class SuiBlockchainClient:
         
         try:
             # Query events using the event subscription builder
-            builder = SubscribeTransaction.subscribe_event(
+            result = self.client.query_events(
+                query={"All": []},  # Query all events
                 cursor=cursor,
-                limit=limit
+                limit=limit,
+                descending_order=True
             )
-            result = self.client.execute(builder)
             
             if not result.is_ok():
                 return {

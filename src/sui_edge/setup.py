@@ -26,8 +26,11 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'bridge_node = sui_edge.bridge_node:main',
-            'sui_service_node = sui_edge.sui_service_node:main',
+            'sui_edge_bridge_node = sui_edge.bridge_node:main',
+            'sui_edge_sui_service_node = sui_edge.sui_service_node:main',
         ],
     },
+    scripts=[],
+    package_dir={'': '.'},
+    package_data={},
 ) 
