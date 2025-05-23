@@ -1,31 +1,42 @@
 from typing import Optional, List, Dict, Any
 import asyncio
-from sui.client import SuiClient
-from sui.types import SuiTransactionResponse, SuiEvent
 import logging
+from pysui.sui.sui_config import SuiConfig
+from pysui.sui.sui_clients.sync_client import SuiClient
+from pysui.sui.sui_types.address import SuiAddress
+from pysui.sui.sui_builders.get_builders import GetTransaction
+from pysui.sui.sui_builders.subscription_builders import SubscribeTransaction
 
 class SuiBlockchainClient:
-    """Pure blockchain client for Sui network interactions."""
+    """Pure blockchain client for Sui network."""
     
-    def __init__(self, network: str, rpc_url: Optional[str] = None, ws_url: Optional[str] = None):
+    def __init__(self, network: str, rpc_url: Optional[str] = None, ws_url: Optional[str] = None, keypair_path: Optional[str] = None):
         self.logger = logging.getLogger("sui_blockchain_client")
         self.network = network
-        self.rpc_url = rpc_url
-        self.ws_url = ws_url
+        
+        # Initialize Sui configuration
+        self.config = SuiConfig.user_config(
+            rpc_url=rpc_url or f"https://fullnode.{network}.sui.io:443",
+            ws_url=ws_url or f"wss://fullnode.{network}.sui.io:443",
+            # If keypair_path is provided, we'll need to load the keys from it
+            prv_keys=[]  # We'll load these from keypair_path if provided
+        )
+        
+        # Initialize Sui client
         self.client: Optional[SuiClient] = None
         
     async def connect(self) -> None:
         """Initialize connection to Sui network."""
         try:
-            self.client = SuiClient(
-                config={
-                    "rpc_url": self.rpc_url,
-                    "ws_url": self.ws_url,
-                }
-            )
-            # Test connection
-            await self.client.get_latest_checkpoint_sequence_number()
+            self.client = SuiClient(self.config)
+            
+            # Test connection by getting latest checkpoint
+            result = self.client.get_latest_checkpoint_sequence_number()
+            if not result.is_ok():
+                raise Exception(f"Failed to connect: {result.result_string}")
+                
             self.logger.info(f'Connected to Sui {self.network}')
+            
         except Exception as e:
             self.logger.error(f'Failed to connect to Sui network: {str(e)}')
             raise
@@ -36,10 +47,13 @@ class SuiBlockchainClient:
             raise RuntimeError("Client not initialized")
         
         try:
-            checkpoint = await self.client.get_latest_checkpoint_sequence_number()
+            result = self.client.get_latest_checkpoint_sequence_number()
+            if not result.is_ok():
+                raise Exception(f"Failed to get status: {result.result_string}")
+                
             return {
                 "network": self.network,
-                "latest_checkpoint": checkpoint,
+                "latest_checkpoint": result.result_data,
                 "connected": True
             }
         except Exception as e:
@@ -52,16 +66,28 @@ class SuiBlockchainClient:
             raise RuntimeError("Client not initialized")
         
         try:
-            response = await self.client.execute_transaction(
+            # Create transaction builder
+            builder = GetTransaction.submit_tx(
                 tx_bytes=tx_bytes,
-                signature=signature,
+                signatures=[signature],
                 request_type="WaitForLocalExecution"
             )
+            
+            # Execute transaction
+            result = self.client.execute(builder)
+            if not result.is_ok():
+                return {
+                    "success": False,
+                    "status": "error",
+                    "error": result.result_string
+                }
+            
+            tx_response = result.result_data
             return {
                 "success": True,
-                "digest": response.digest,
+                "digest": tx_response.digest,
                 "status": "success",
-                "effects": response.effects
+                "effects": tx_response.effects
             }
         except Exception as e:
             self.logger.error(f'Transaction submission failed: {str(e)}')
@@ -77,15 +103,24 @@ class SuiBlockchainClient:
             raise RuntimeError("Client not initialized")
         
         try:
-            events = await self.client.query_events(
-                query={},
+            # Query events using the event subscription builder
+            builder = SubscribeTransaction.subscribe_event(
                 cursor=cursor,
                 limit=limit
             )
+            result = self.client.execute(builder)
+            
+            if not result.is_ok():
+                return {
+                    "success": False,
+                    "error": result.result_string
+                }
+            
+            events_data = result.result_data
             return {
                 "success": True,
-                "events": events,
-                "next_cursor": events.next_cursor if hasattr(events, 'next_cursor') else None
+                "events": events_data.data,
+                "next_cursor": events_data.next_cursor
             }
         except Exception as e:
             self.logger.error(f'Failed to fetch events: {str(e)}')
@@ -100,10 +135,16 @@ class SuiBlockchainClient:
             raise RuntimeError("Client not initialized")
         
         try:
-            object_info = await self.client.get_object(object_id)
+            result = self.client.get_object(object_id)
+            if not result.is_ok():
+                return {
+                    "success": False,
+                    "error": result.result_string
+                }
+            
             return {
                 "success": True,
-                "object_info": object_info
+                "object_info": result.result_data
             }
         except Exception as e:
             self.logger.error(f'Failed to fetch object {object_id}: {str(e)}')
@@ -115,5 +156,5 @@ class SuiBlockchainClient:
     async def close(self) -> None:
         """Close the Sui client connection."""
         if self.client:
-            await self.client.close()
+            # The sync client doesn't have an explicit close method
             self.client = None
