@@ -4,13 +4,14 @@
   <name>sui_edge</name>
   <version>0.0.1</version>
   <description>ROS2 bridge for Sui blockchain integration</description>
-  <maintainer email="Marcus.Arnett10@gmail.com">kpatch</maintainer>
+  <maintainer email="irvsteve@gmail.com">kpatch</maintainer>
   <license>Apache License 2.0</license>
 
+  <buildtool_depend>ament_python</buildtool_depend>
+  
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
-  <depend>builtin_interfaces</depend>
-  <depend>example_interfaces</depend>
+  <depend>sui_edge_msgs</depend>
   
   <exec_depend>python3-pysui</exec_depend>
   <exec_depend>python3-yaml</exec_depend>

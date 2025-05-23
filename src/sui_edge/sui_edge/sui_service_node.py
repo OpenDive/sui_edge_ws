@@ -6,7 +6,10 @@ from threading import Thread
 from typing import Optional
 import json
 
-from sui_edge.srv import SubmitTransaction, GetEvents, GetObject, GetStatus
+from std_srvs.srv import Trigger
+from rcl_interfaces.srv import GetParameters, ListParameters, SetParameters
+from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
+
 from .sui_client import SuiBlockchainClient
 from .config import BridgeConfig
 
@@ -32,25 +35,25 @@ class SuiServiceNode(Node):
         
         # Create services
         self.submit_tx_srv = self.create_service(
-            SubmitTransaction,
+            SetParameters,
             'sui/submit_transaction',
             self.handle_submit_transaction
         )
         
         self.get_events_srv = self.create_service(
-            GetEvents,
+            ListParameters,
             'sui/get_events',
             self.handle_get_events
         )
         
         self.get_object_srv = self.create_service(
-            GetObject,
+            GetParameters,
             'sui/get_object',
             self.handle_get_object
         )
         
         self.get_status_srv = self.create_service(
-            GetStatus,
+            Trigger,
             'sui/get_status',
             self.handle_get_status
         )
@@ -74,64 +77,90 @@ class SuiServiceNode(Node):
 
     def handle_submit_transaction(self, request, response):
         """Handle transaction submission service calls."""
+        # Extract transaction data from parameters
+        tx_bytes = None
+        signature = None
+        for param in request.parameters:
+            if param.name == 'tx_bytes':
+                tx_bytes = param.value.string_value
+            elif param.name == 'signature':
+                signature = param.value.string_value
+        
+        if not tx_bytes or not signature:
+            response.results = []
+            return response
+            
         future = asyncio.run_coroutine_threadsafe(
-            self.sui_client.submit_transaction(
-                request.tx_bytes,
-                request.signature
-            ),
+            self.sui_client.submit_transaction(tx_bytes, signature),
             self.event_loop
         )
         
         try:
             result = future.result(timeout=self.config.transaction_timeout)
-            response.success = result['success']
-            response.status = result.get('status', '')
-            response.digest = result.get('digest', '')
-            response.error_message = result.get('error', '')
-            response.effects = json.dumps(result.get('effects', {}))
+            # Convert result to parameter
+            param = Parameter()
+            param.name = 'transaction_result'
+            param.value.type = ParameterType.STRING
+            param.value.string_value = json.dumps(result)
+            response.results.append(param)
         except Exception as e:
-            response.success = False
-            response.error_message = str(e)
+            param = Parameter()
+            param.name = 'error'
+            param.value.type = ParameterType.STRING
+            param.value.string_value = str(e)
+            response.results.append(param)
         
         return response
 
     def handle_get_events(self, request, response):
         """Handle event query service calls."""
+        # Extract cursor and limit from prefix if provided
+        cursor = None
+        limit = 50  # default
+        if request.prefixes:
+            try:
+                cursor = request.prefixes[0]
+                if len(request.prefixes) > 1:
+                    limit = int(request.prefixes[1])
+            except (IndexError, ValueError):
+                pass
+                
         future = asyncio.run_coroutine_threadsafe(
-            self.sui_client.get_events(
-                cursor=request.cursor if request.cursor else None,
-                limit=request.limit
-            ),
+            self.sui_client.get_events(cursor=cursor, limit=limit),
             self.event_loop
         )
         
         try:
             result = future.result(timeout=self.config.transaction_timeout)
-            response.success = result['success']
-            response.events = [json.dumps(event) for event in result.get('events', [])]
-            response.next_cursor = result.get('next_cursor', '')
-            response.error_message = result.get('error', '')
+            response.result = json.dumps(result)
         except Exception as e:
-            response.success = False
-            response.error_message = str(e)
+            response.result = json.dumps({'error': str(e)})
         
         return response
 
     def handle_get_object(self, request, response):
         """Handle object query service calls."""
+        if not request.names:
+            response.values = []
+            return response
+            
+        object_id = request.names[0]  # Get first object ID
         future = asyncio.run_coroutine_threadsafe(
-            self.sui_client.get_object(request.object_id),
+            self.sui_client.get_object(object_id),
             self.event_loop
         )
         
         try:
             result = future.result(timeout=self.config.transaction_timeout)
-            response.success = result['success']
-            response.object_info = json.dumps(result.get('object_info', {}))
-            response.error_message = result.get('error', '')
+            value = ParameterValue()
+            value.type = ParameterType.STRING
+            value.string_value = json.dumps(result)
+            response.values.append(value)
         except Exception as e:
-            response.success = False
-            response.error_message = str(e)
+            value = ParameterValue()
+            value.type = ParameterType.STRING
+            value.string_value = json.dumps({'error': str(e)})
+            response.values.append(value)
         
         return response
 
@@ -145,12 +174,10 @@ class SuiServiceNode(Node):
         try:
             result = future.result(timeout=self.config.transaction_timeout)
             response.success = True
-            response.network = result['network']
-            response.latest_checkpoint = result['latest_checkpoint']
-            response.error_message = ''
+            response.message = json.dumps(result)
         except Exception as e:
             response.success = False
-            response.error_message = str(e)
+            response.message = str(e)
         
         return response
 

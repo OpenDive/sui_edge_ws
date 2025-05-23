@@ -29,17 +29,21 @@ source .venv/bin/activate
 pip install --upgrade pip
 ```
 
-2. Clone the repository:
+2. Install ROS2 build dependencies in the virtual environment:
+```bash
+# Core dependencies
+pip install pysui>=0.85.0 pyyaml
+
+# ROS2 build dependencies
+pip install empy catkin_pkg numpy
+```
+
+3. Clone the repository:
 ```bash
 mkdir -p ~/ros2_ws/src
 cd ~/ros2_ws/src
 git clone https://github.com/yourusername/sui_edge_ws.git
 cd sui_edge_ws
-```
-
-3. Install dependencies:
-```bash
-pip install sui-sdk pyyaml
 ```
 
 4. Build the ROS2 package:

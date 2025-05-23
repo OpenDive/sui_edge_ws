@@ -1,0 +1,7 @@
+# Request
+string object_id
+---
+# Response
+bool success
+string object_info  # JSON string of object information
+string error_message 
