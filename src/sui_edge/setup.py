@@ -12,8 +12,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        (os.path.join('share', package_name, 'launch'),
-            glob(os.path.join('launch', '*launch.[pxy][yma]*'))),
+        ('share/' + package_name + '/launch', ['launch/service_launch.py']),
         (os.path.join('share', package_name, 'config'),
             glob(os.path.join('config', '*.yaml'))),
         (os.path.join('lib', package_name), [])  # This ensures the lib/sui_edge directory is created
@@ -32,7 +31,6 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'bridge_node = sui_edge.bridge_node:main',
             'sui_service_node = sui_edge.sui_service_node:main',
         ],
     },
