@@ -1,0 +1,17 @@
+sui:
+  network: "devnet"  # or "testnet", "mainnet"
+  rpc_url: null  # Use SDK default
+  ws_url: null   # Use SDK default
+  keypair_path: "~/.sui/sui_config/sui.keystore"
+
+ros:
+  node_name: "sui_bridge"
+  namespace: ""
+  topics:
+    transaction_status: "/sui/transaction_status"
+    events: "/sui/events"
+
+bridge:
+  event_polling_interval: 1.0  # seconds
+  transaction_timeout: 30.0    # seconds
+  max_batch_size: 50
