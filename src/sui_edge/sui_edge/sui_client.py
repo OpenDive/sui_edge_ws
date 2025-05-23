@@ -5,6 +5,7 @@ from pysui.sui.sui_config import SuiConfig
 from pysui.sui.sui_clients.sync_client import SuiClient
 from pysui.sui.sui_types.address import SuiAddress
 from pysui.sui.sui_txn.async_transaction import SuiTransactionAsync
+from pysui.sui.sui_builders.get_builders import GetLatestCheckpointSequence
 
 class SuiBlockchainClient:
     """Pure blockchain client for Sui network."""
@@ -30,7 +31,8 @@ class SuiBlockchainClient:
             self.client = SuiClient(self.config)
             
             # Test connection by getting latest checkpoint
-            result = self.client.get_latest_checkpoint_sequence_number()
+            builder = GetLatestCheckpointSequence()
+            result = self.client.execute(builder)
             if not result.is_ok():
                 raise Exception(f"Failed to connect: {result.result_string}")
                 
@@ -46,7 +48,8 @@ class SuiBlockchainClient:
             raise RuntimeError("Client not initialized")
         
         try:
-            result = self.client.get_latest_checkpoint_sequence_number()
+            builder = GetLatestCheckpointSequence()
+            result = self.client.execute(builder)
             if not result.is_ok():
                 raise Exception(f"Failed to get status: {result.result_string}")
                 

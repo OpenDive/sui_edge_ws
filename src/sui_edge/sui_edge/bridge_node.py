@@ -7,7 +7,7 @@ from typing import Optional
 import json
 
 from .config import BridgeConfig
-from .sui_client import SuiBridgeClient
+from .sui_client import SuiBlockchainClient
 from .message_translator import MessageTranslator
 
 class SuiBridgeNode(Node):
