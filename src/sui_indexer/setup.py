@@ -22,7 +22,7 @@ setup(
         'prisma',  # Prisma Client Python
         'pysui',   # Sui Python SDK
         'python-dotenv',  # For environment configuration
-        'asyncio',  # For async support
+        'websockets',  # For WebSocket support
     ],
     zip_safe=True,
     maintainer='kpatch',
@@ -32,8 +32,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'indexer_node = sui_indexer.indexer_node:main',
-            'prisma_setup = sui_indexer.scripts.setup_prisma:main',
+            'indexer = sui_indexer.indexer_node:main',
+            'setup_prisma = scripts.setup_prisma:main',
         ],
     },
 )
