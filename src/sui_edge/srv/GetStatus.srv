@@ -1,0 +1,7 @@
+# Request
+---
+# Response
+bool success
+string network
+uint64 latest_checkpoint
+string error_message 

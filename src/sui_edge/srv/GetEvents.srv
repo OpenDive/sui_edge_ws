@@ -1,0 +1,9 @@
+# Request
+string cursor  # Optional cursor for pagination
+int32 limit    # Maximum number of events to return
+---
+# Response
+bool success
+string[] events  # JSON strings of events
+string next_cursor
+string error_message 

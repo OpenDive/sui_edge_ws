@@ -17,6 +17,18 @@ def generate_launch_description():
             description='Path to configuration file'
         ),
         
+        # Sui Service Node
+        Node(
+            package='sui_edge',
+            executable='sui_service_node',
+            name='sui_service_node',
+            parameters=[
+                {'config_file': LaunchConfiguration('config_file')}
+            ],
+            output='screen'
+        ),
+        
+        # Bridge Node (if still needed for other functionality)
         Node(
             package='sui_edge',
             executable='bridge_node',

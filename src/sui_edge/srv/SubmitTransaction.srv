@@ -1,0 +1,10 @@
+# Request
+string tx_bytes
+string signature
+---
+# Response
+bool success
+string status
+string digest
+string error_message
+string effects  # JSON string of transaction effects 
