@@ -28,10 +28,12 @@ git clone https://github.com/yourusername/sui_edge.git
 3. Install dependencies:
 ```bash
 cd ~/sui_edge_ws
+
+# Install ROS2 dependencies
 rosdep install --from-paths src --ignore-src -r -y
 
 # Install Python dependencies
-pip install prisma pysui python-dotenv
+pip install -r requirements.txt
 ```
 
 4. Build the workspace:
