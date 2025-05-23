@@ -3,6 +3,9 @@ rclpy>=1.0.0
 catkin_pkg>=0.5.0  # Required for ROS2 package building
 empy>=3.3.4  # Required for ROS2 message generation
 lark>=1.1.1  # Required for ROS2 message parsing
+numpy>=2.2.6  # Required for ROS2 message generation
+jinja2>=3.1.6  # Required for ROS2 parameter generation
+typeguard>=4.4.2  # Required for ROS2 parameter validation
 colcon-common-extensions>=0.3.0  # Useful colcon extensions
 
 # Sui Blockchain Dependencies
@@ -22,4 +25,7 @@ ament-flake8
 ament-pep257
 pytest-cov>=2.10.0
 black>=22.0.0  # for code formatting
-isort>=5.0.0   # for import sorting 
+isort>=5.0.0   # for import sorting
+
+# Build Dependencies
+setuptools>=80.8.0 
