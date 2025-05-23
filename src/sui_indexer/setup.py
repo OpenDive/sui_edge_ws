@@ -3,6 +3,7 @@ import os
 from glob import glob
 
 package_name = 'sui_indexer'
+package_dir = os.path.dirname(os.path.abspath(__file__))
 
 setup(
     name=package_name,
@@ -10,12 +11,14 @@ setup(
     packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages',
-            ['resource/' + package_name]),
+            [os.path.join(package_dir, 'resource', package_name)]),
         ('share/' + package_name, ['package.xml']),
         # Include all launch files
-        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
+        (os.path.join('share', package_name, 'launch'),
+            glob(os.path.join(package_dir, 'launch', '*.launch.py'))),
         # Include Prisma schema
-        (os.path.join('share', package_name, 'prisma'), glob('prisma/*.prisma')),
+        (os.path.join('share', package_name, 'prisma'),
+            glob(os.path.join(package_dir, 'prisma', '*.prisma'))),
     ],
     install_requires=[
         'setuptools',
@@ -32,7 +35,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'indexer = sui_indexer.indexer_node:main',
+            'indexer_node = sui_indexer.indexer_node:main',
             'setup_prisma = scripts.setup_prisma:main',
         ],
     },

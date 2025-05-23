@@ -25,4 +25,10 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/prisma
 )
 
+# Install launch files
+install(DIRECTORY
+  launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+)
+
 ament_package() 
