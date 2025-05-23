@@ -17,7 +17,7 @@ setup(
         ('share/' + package_name + '/config',
             glob(os.path.join('config', '*.yaml'))),
     ],
-    install_requires=['setuptools', 'pysui>=0.85.0'],
+    install_requires=['setuptools', 'pysui>=0.84.0'],
     zip_safe=True,
     maintainer='kpatch',
     maintainer_email='irvsteve@gmail.com',
