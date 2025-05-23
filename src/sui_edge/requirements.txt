@@ -1,0 +1,25 @@
+# ROS2 Python Dependencies
+rclpy>=1.0.0
+catkin_pkg>=0.5.0  # Required for ROS2 package building
+empy>=3.3.4  # Required for ROS2 message generation
+lark>=1.1.1  # Required for ROS2 message parsing
+colcon-common-extensions>=0.3.0  # Useful colcon extensions
+
+# Sui Blockchain Dependencies
+pysui>=0.84.0
+
+# System Dependencies
+pyyaml>=5.3.1
+
+# Development Dependencies
+pytest>=6.0.0
+flake8>=3.8.0
+pylint>=2.5.0
+
+# Code Quality and Testing
+ament-copyright
+ament-flake8
+ament-pep257
+pytest-cov>=2.10.0
+black>=22.0.0  # for code formatting
+isort>=5.0.0   # for import sorting 
