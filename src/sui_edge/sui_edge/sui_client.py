@@ -4,7 +4,7 @@ import logging
 from pysui.sui.sui_config import SuiConfig
 from pysui.sui.sui_clients.sync_client import SuiClient
 from pysui.sui.sui_types.address import SuiAddress
-from pysui.sui.sui_txn.transaction_builder import TransactionBuilder, ExecuteTransaction
+from pysui.sui.sui_txn.async_transaction import SuiTransactionAsync
 
 class SuiBlockchainClient:
     """Pure blockchain client for Sui network."""
@@ -65,29 +65,27 @@ class SuiBlockchainClient:
             raise RuntimeError("Client not initialized")
         
         try:
-            # Create transaction builder and execute
-            builder = TransactionBuilder(
-                client=self.client,
-                tx_bytes=tx_bytes,
-                signatures=[signature]
-            )
+            # Create async transaction
+            tx = SuiTransactionAsync(client=self.client)
             
-            # Execute transaction with wait for local execution
-            result = builder.execute(wait_for_local_execution=True)
+            # Add transaction bytes and signature
+            tx.tx_bytes = tx_bytes
+            tx.signatures = [signature]
             
-            if not result.is_ok():
+            # Execute transaction
+            status, err_msg = await self._send_tx(tx)
+            
+            if not status:
                 return {
                     "success": False,
                     "status": "error",
-                    "error": result.result_string
+                    "error": err_msg
                 }
             
-            tx_response = result.result_data
             return {
                 "success": True,
-                "digest": tx_response.digest,
                 "status": "success",
-                "effects": tx_response.effects
+                "digest": err_msg  # In success case, err_msg contains the transaction digest
             }
         except Exception as e:
             self.logger.error(f'Transaction submission failed: {str(e)}')
@@ -96,6 +94,16 @@ class SuiBlockchainClient:
                 "status": "error",
                 "error": str(e)
             }
+
+    async def _send_tx(self, tx: SuiTransactionAsync) -> tuple[bool, str]:
+        """Helper method to send a transaction and handle the response."""
+        try:
+            result = await tx.execute()
+            if not result.is_ok():
+                return False, result.result_string
+            return True, result.result_data.digest
+        except Exception as e:
+            return False, str(e)
 
     async def get_events(self, cursor: Optional[str] = None, limit: int = 50) -> Dict[str, Any]:
         """Query events from the Sui network."""

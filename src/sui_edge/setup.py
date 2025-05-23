@@ -18,7 +18,12 @@ setup(
             glob(os.path.join('config', '*.yaml'))),
         (os.path.join('lib', package_name), [])  # This ensures the lib/sui_edge directory is created
     ],
-    install_requires=['setuptools', 'pysui>=0.84.0'],
+    install_requires=[
+        'setuptools',
+        'pysui>=0.84.0',
+    ],
+    setup_requires=['setuptools'],
+    python_requires='>=3.8',
     zip_safe=True,
     maintainer='kpatch',
     maintainer_email='irvsteve@gmail.com',
