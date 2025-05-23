@@ -1,3 +1,27 @@
+# Build dependencies (must be installed first)
+Cython>=0.29.0
+wheel>=0.38.0
+setuptools>=65.0.0
+
+# Development tools
+pylint>=2.17.0
+black>=23.0.0
+flake8>=6.0.0
+
+# ROS2 dependencies
+colcon-common-extensions>=0.3.0
+colcon-ros>=0.3.0
+
+# Project dependencies
+prisma>=0.10.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+websockets>=11.0.0
+
+# Testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+
 # Core ROS2 Dependencies
 rclpy>=1.0.0
 catkin_pkg>=0.5.0  # Required for ROS2 package building
@@ -6,28 +30,11 @@ lark>=1.1.1  # Required for ROS2 message parsing
 numpy>=2.2.6  # Required for ROS2 message generation
 jinja2>=3.1.6  # Required for ROS2 parameter generation
 typeguard>=4.4.2  # Required for ROS2 parameter validation
-colcon-common-extensions>=0.3.0  # Useful colcon extensions
-
-# Build System Dependencies
-setuptools>=80.8.0
-wheel>=0.42.0
-Cython>=3.0.8  # Required for numpy and other extensions
-build>=1.0.3  # PEP 517 builder
-
-# Sui Blockchain Dependencies
-pysui>=0.84.0  # Sui Python SDK
-
-# Database Dependencies
-prisma>=0.10.0  # Python Prisma client
-python-dotenv>=1.0.0  # Environment variable management
 
 # System Dependencies
 pyyaml>=5.3.1
 
 # Development Dependencies
-pytest>=6.0.0
-flake8>=3.8.0
-pylint>=2.5.0
 mypy>=1.8.0  # Type checking
 
 # Code Quality and Testing
@@ -35,7 +42,6 @@ ament-copyright
 ament-flake8
 ament-pep257
 pytest-cov>=2.10.0
-black>=22.0.0  # for code formatting
 isort>=5.0.0   # for import sorting
 
 # Build Dependencies
