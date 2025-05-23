@@ -58,6 +58,10 @@ class SuiBridgeNode(Node):
         self.event_thread = Thread(target=run_event_loop, daemon=True)
         self.event_thread.start()
         
+        # Wait for event loop to be initialized
+        while self.event_loop is None:
+            asyncio.sleep(0.1)
+        
         # Initialize Sui client
         future = asyncio.run_coroutine_threadsafe(
             self.sui_client.connect(),
