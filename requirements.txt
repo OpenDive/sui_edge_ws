@@ -1,4 +1,4 @@
-# ROS2 Python Dependencies
+# Core ROS2 Dependencies
 rclpy>=1.0.0
 catkin_pkg>=0.5.0  # Required for ROS2 package building
 empy>=3.3.4  # Required for ROS2 message generation
@@ -9,7 +9,11 @@ typeguard>=4.4.2  # Required for ROS2 parameter validation
 colcon-common-extensions>=0.3.0  # Useful colcon extensions
 
 # Sui Blockchain Dependencies
-pysui>=0.84.0
+pysui>=0.84.0  # Sui Python SDK
+
+# Database Dependencies
+prisma>=0.10.0  # Python Prisma client
+python-dotenv>=1.0.0  # Environment variable management
 
 # System Dependencies
 pyyaml>=5.3.1
