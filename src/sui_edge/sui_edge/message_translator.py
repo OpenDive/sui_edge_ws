@@ -1,12 +1,12 @@
 from typing import Dict, Any
 import json
 from std_msgs.msg import String
-from rclpy.logging import Logger
+from rclpy.impl.rcutils_logger import RcutilsLogger
 
 class MessageTranslator:
     """Handles translation between ROS2 messages and Sui data structures."""
     
-    def __init__(self, logger: Logger):
+    def __init__(self, logger: RcutilsLogger):
         self.logger = logger
 
     def sui_event_to_ros_msg(self, event: Dict[str, Any]) -> String:
