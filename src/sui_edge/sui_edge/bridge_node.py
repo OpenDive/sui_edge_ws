@@ -19,7 +19,7 @@ class SuiBridgeNode(Node):
         
         # Initialize components
         self.translator = MessageTranslator(self.get_logger())
-        self.sui_client = SuiBridgeClient(self.config)
+        self.sui_client = SuiBlockchainClient(self.config)
         
         # Set up publishers
         self.tx_status_pub = self.create_publisher(
