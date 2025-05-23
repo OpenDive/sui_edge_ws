@@ -172,3 +172,10 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# ROS2 ignores
+install/
+build/
+log/
+*.bag
+.catkin_workspace
