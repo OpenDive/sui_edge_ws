@@ -7,7 +7,7 @@ import json
 import rclpy
 from rclpy.node import Node
 from builtin_interfaces.msg import Time
-from sui_indexer.msg import SuiEvent, IndexerStatus
+from sui_indexer_msgs.msg import SuiEvent, IndexerStatus
 
 from prisma import Prisma
 from pysui.sui.sui_clients import SuiClient
