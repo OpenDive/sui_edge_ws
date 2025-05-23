@@ -4,7 +4,7 @@ import logging
 from pysui.sui.sui_config import SuiConfig
 from pysui.sui.sui_clients.sync_client import SuiClient
 from pysui.sui.sui_types.address import SuiAddress
-from pysui.sui.sui_builders.get_builders import GetTransaction
+from pysui.sui.sui_builders.transaction_builder import TransactionBuilder
 from pysui.sui.sui_builders.subscription_builders import SubscribeTransaction
 
 class SuiBlockchainClient:
@@ -67,14 +67,12 @@ class SuiBlockchainClient:
         
         try:
             # Create transaction builder
-            builder = GetTransaction.submit_tx(
-                tx_bytes=tx_bytes,
-                signatures=[signature],
-                request_type="WaitForLocalExecution"
-            )
+            builder = TransactionBuilder(self.client)
+            builder.add_transaction_bytes(tx_bytes)
+            builder.add_signature(signature)
             
             # Execute transaction
-            result = self.client.execute(builder)
+            result = builder.execute(wait_for_local_execution=True)
             if not result.is_ok():
                 return {
                     "success": False,
