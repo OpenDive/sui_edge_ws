@@ -4,12 +4,14 @@ from typing import Any, Callable, Dict, List, Optional
 import json
 import asyncio
 from threading import Thread
+import os
 
 import rclpy
 from rclpy.node import Node
 from builtin_interfaces.msg import Time
 from sui_indexer_msgs.msg import SuiEvent, IndexerStatus
 from rcl_interfaces.msg import ParameterDescriptor, ParameterType
+from ament_index_python.packages import get_package_share_directory
 
 from prisma import Prisma
 from pysui.sui.sui_clients.sync_client import SuiClient
@@ -44,6 +46,16 @@ class SuiIndexerNode(Node):
         self.event_loop: Optional[asyncio.AbstractEventLoop] = None
         self.event_thread: Optional[Thread] = None
         
+        # Set up database path
+        pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        data_dir = os.path.join(pkg_dir, 'data')
+        os.makedirs(data_dir, exist_ok=True)
+        db_path = os.path.join(data_dir, 'sui_indexer.db')
+        database_url = f'file:{db_path}'
+        
+        self.get_logger().info(f"Database path: {db_path}")
+        self.get_logger().info(f"Database URL: {database_url}")
+        
         # Declare parameters with proper types
         self.declare_parameter('package_id', '', descriptor=ParameterDescriptor(
             type=ParameterType.PARAMETER_STRING,
@@ -70,9 +82,9 @@ class SuiIndexerNode(Node):
             additional_constraints='Must be between 1 and 100'
         ))
         
-        self.declare_parameter('database_url', 'file:sui_indexer.db', descriptor=ParameterDescriptor(
+        self.declare_parameter('database_url', database_url, descriptor=ParameterDescriptor(
             type=ParameterType.PARAMETER_STRING,
-            description='Database URL for the indexer'
+            description='Database URL for the indexer. Use absolute path for production deployments.'
         ))
         
         # Validate parameters

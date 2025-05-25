@@ -186,8 +186,20 @@ Configure via launch file parameters:
 - `package_id` (required) - Sui package ID to monitor
 - `database_url` (default: file:sui_indexer.db) - SQLite database location
 
-## Database Schema
+## Database
 
+### Development
+During development, the SQLite database is stored in the package source directory as `sui_indexer.db`. This simplifies development and testing.
+
+### Production
+For production deployments, specify an absolute path using the `database_url` parameter:
+```bash
+ros2 launch sui_indexer indexer.launch.py \
+    "package_id:='YOUR_PACKAGE_ID'" \
+    "database_url:='file:/var/lib/sui_indexer/sui_indexer.db'"
+```
+
+### Schema
 The indexer maintains three tables:
 - `Cursor` - Tracks event processing progress
 - `Escrow` - Stores escrow-related events

@@ -6,6 +6,12 @@ A ROS2 node for indexing Sui blockchain events.
 
 The Sui Indexer node monitors and indexes events from a specified Sui package. It tracks events related to locks and shared objects, storing them in a local database for further processing.
 
+## Database Location
+
+For development, the SQLite database is stored in the package source directory as `sui_indexer.db`. 
+
+For production deployments, you should specify an absolute path using the `database_url` parameter to ensure proper data persistence and access permissions.
+
 ## Usage
 
 ### Running the Indexer
@@ -31,14 +37,15 @@ The following parameters can be configured when launching the indexer:
 - `network` (Optional, default: 'testnet'): Sui network to connect to (testnet, mainnet, devnet)
 - `polling_interval_ms` (Optional, default: 1000): Polling interval in milliseconds
 - `default_limit` (Optional, default: 50): Default limit for event queries
-- `database_url` (Optional, default: 'file:sui_indexer.db'): Database URL for the indexer
+- `database_url` (Optional, default: 'file:sui_indexer.db'): Database URL for the indexer. For production, use an absolute path (e.g., 'file:/var/lib/sui_indexer/sui_indexer.db')
 
 Example with multiple parameters:
 ```bash
 ros2 launch sui_indexer indexer.launch.py \
     "package_id:='0xfe09cf0b3d77678b99250572624bf74fe3b12af915c5db95f0ed5d755612eb68'" \
     "network:='mainnet'" \
-    "polling_interval_ms:=2000"
+    "polling_interval_ms:=2000" \
+    "database_url:='file:/var/lib/sui_indexer/sui_indexer.db'"  # Example production path
 ```
 
 ## Topics
