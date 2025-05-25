@@ -282,8 +282,13 @@ class SuiIndexerNode(Node):
                 
                 # Update cursor if we have new data
                 if next_cursor and data:
-                    self.save_latest_cursor(tracker, next_cursor)
-                    tracker.cursor = next_cursor
+                    # Convert dictionary cursor to EventID object
+                    cursor_obj = EventID(
+                        event_seq=str(next_cursor["eventSeq"]),
+                        tx_seq=next_cursor["txDigest"]
+                    )
+                    self.save_latest_cursor(tracker, cursor_obj)
+                    tracker.cursor = cursor_obj
                 
                 # Adjust polling interval if needed
                 if has_next_page:
