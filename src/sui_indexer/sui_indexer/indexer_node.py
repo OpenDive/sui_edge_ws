@@ -283,6 +283,8 @@ class SuiIndexerNode(Node):
                         timestamp.sec = ms // 1000
                         timestamp.nanosec = (ms % 1000) * 1000000
                         msg.timestamp = timestamp
+
+                        self.get_logger().info(f"Publishing event: {msg}")
                         
                         self.event_pub.publish(msg)
                     
