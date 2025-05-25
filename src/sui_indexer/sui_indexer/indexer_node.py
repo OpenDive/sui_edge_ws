@@ -229,10 +229,20 @@ class SuiIndexerNode(Node):
         """Timer callback to poll for events."""
         for tracker in self.event_trackers:
             try:
+                self.get_logger().info(f"Current tracker cursor type: {type(tracker.cursor)}, value: {tracker.cursor}")
+                
+                # Convert dict cursor to EventID for Sui query
+                query_cursor = None
+                if tracker.cursor:
+                    query_cursor = EventID(
+                        event_seq=str(tracker.cursor["eventSeq"]),
+                        tx_seq=tracker.cursor["txDigest"]
+                    )
+                
                 # Query events from the chain using the proper builder
                 query_builder = QueryEvents(
                     query=tracker.filter,  # Pass the MoveEventModuleQuery directly
-                    cursor=tracker.cursor,
+                    cursor=query_cursor,
                     limit=self.get_parameter('default_limit').value,
                     descending_order=False  # We want ascending order like the TypeScript version
                 )
@@ -247,6 +257,7 @@ class SuiIndexerNode(Node):
                 data = events_data.data
                 has_next_page = events_data.has_next_page
                 next_cursor = events_data.next_cursor
+                self.get_logger().info(f"Received next_cursor type: {type(next_cursor)}, value: {next_cursor}")
                 
                 # Debug logging
                 self.get_logger().info(f"Events data type: {type(events_data)}")
@@ -283,8 +294,8 @@ class SuiIndexerNode(Node):
                 
                 # Update cursor if we have new data
                 if next_cursor and data:
-                    self.save_latest_cursor(tracker, next_cursor)
-                    tracker.cursor = next_cursor
+                    self.save_latest_cursor(tracker, next_cursor)  # Save as dictionary
+                    tracker.cursor = next_cursor  # Store as dictionary
                 
                 # Adjust polling interval if needed
                 if has_next_page:
@@ -296,7 +307,7 @@ class SuiIndexerNode(Node):
                 self.get_logger().error(f"Error polling events: {str(e)}")
                 continue
     
-    def get_latest_cursor(self, tracker: EventTracker) -> Optional[EventID]:
+    def get_latest_cursor(self, tracker: EventTracker) -> Optional[dict]:
         """Get the latest cursor for an event tracker."""
         try:
             future = asyncio.run_coroutine_threadsafe(
@@ -308,25 +319,26 @@ class SuiIndexerNode(Node):
                 self.event_loop
             )
             cursor_data = future.result()
+            self.get_logger().info(f"Retrieved cursor from DB: {cursor_data}")
             if cursor_data is None:
                 return None
                 
-            # Convert database cursor to EventID object
-            return EventID(
-                event_seq=cursor_data.eventSeq,
-                tx_seq=cursor_data.txDigest
-            )
+            # Return cursor as dictionary
+            return {
+                "txDigest": cursor_data.txDigest,
+                "eventSeq": cursor_data.eventSeq
+            }
         except Exception as e:
             self.get_logger().error(f"Error getting cursor: {str(e)}")
             return None
     
-    def save_latest_cursor(self, tracker: EventTracker, cursor: EventID):
+    def save_latest_cursor(self, tracker: EventTracker, cursor: dict):
         """Save the latest cursor for an event tracker."""
-        # Access the underlying map from EventID object
+        self.get_logger().info(f"Saving cursor type: {type(cursor)}, value: {cursor}")
         data = {
             "id": tracker.type,
-            "txDigest": cursor.map["txDigest"],
-            "eventSeq": cursor.map["eventSeq"]
+            "txDigest": cursor["txDigest"],
+            "eventSeq": cursor["eventSeq"]
         }
         try:
             future = asyncio.run_coroutine_threadsafe(
@@ -337,8 +349,8 @@ class SuiIndexerNode(Node):
                     data={
                         "create": data,
                         "update": {
-                            "txDigest": cursor.map["txDigest"],
-                            "eventSeq": cursor.map["eventSeq"]
+                            "txDigest": cursor["txDigest"],
+                            "eventSeq": cursor["eventSeq"]
                         }
                     }
                 ),
