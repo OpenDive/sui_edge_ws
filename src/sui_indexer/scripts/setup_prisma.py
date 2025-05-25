@@ -21,15 +21,16 @@ class PrismaSetupNode(Node):
             if not os.path.exists(self.prisma_path):
                 raise FileNotFoundError(f"Prisma schema directory not found at {self.prisma_path}")
             
-            # Set up database path
-            pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            data_dir = os.path.join(pkg_dir, 'data')
+            # Set up database path relative to current working directory
+            data_dir = os.path.join(os.getcwd(), 'data')
             os.makedirs(data_dir, exist_ok=True)
             db_path = os.path.join(data_dir, 'sui_indexer.db')
             
-            # Set database URL with absolute path
-            os.environ['DATABASE_URL'] = f'file:{db_path}'
+            # Set database URL with relative path
+            os.environ['DATABASE_URL'] = f'file:{os.path.relpath(db_path)}'
             
+            self.get_logger().info(f"Working directory: {os.getcwd()}")
+            self.get_logger().info(f"Data directory: {data_dir}")
             self.get_logger().info(f"Database path: {db_path}")
             self.get_logger().info(f"Database URL: {os.environ['DATABASE_URL']}")
             

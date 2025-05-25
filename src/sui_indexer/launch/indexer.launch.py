@@ -34,7 +34,7 @@ def generate_launch_description():
     database_url_arg = DeclareLaunchArgument(
         'database_url',
         default_value='file:sui_indexer.db',
-        description='Database URL for the indexer'
+        description='Database URL for the indexer. If not provided or default value used, will create/use database in "./data/sui_indexer.db" relative to launch directory.'
     )
     
     pkg_share = FindPackageShare('sui_indexer')

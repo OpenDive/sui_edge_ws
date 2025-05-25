@@ -46,16 +46,6 @@ class SuiIndexerNode(Node):
         self.event_loop: Optional[asyncio.AbstractEventLoop] = None
         self.event_thread: Optional[Thread] = None
         
-        # Set up database path
-        pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        data_dir = os.path.join(pkg_dir, 'data')
-        os.makedirs(data_dir, exist_ok=True)
-        db_path = os.path.join(data_dir, 'sui_indexer.db')
-        database_url = f'file:{db_path}'
-        
-        self.get_logger().info(f"Database path: {db_path}")
-        self.get_logger().info(f"Database URL: {database_url}")
-        
         # Declare parameters with proper types
         self.declare_parameter('package_id', '', descriptor=ParameterDescriptor(
             type=ParameterType.PARAMETER_STRING,
@@ -82,7 +72,7 @@ class SuiIndexerNode(Node):
             additional_constraints='Must be between 1 and 100'
         ))
         
-        self.declare_parameter('database_url', database_url, descriptor=ParameterDescriptor(
+        self.declare_parameter('database_url', '', descriptor=ParameterDescriptor(
             type=ParameterType.PARAMETER_STRING,
             description='Database URL for the indexer. Use absolute path for production deployments.'
         ))
@@ -109,8 +99,20 @@ class SuiIndexerNode(Node):
         # Event trackers
         self.event_trackers: List[EventTracker] = []
         
+        # Get database URL from parameter or use default relative path
+        database_url = self.get_parameter('database_url').value
+        if not database_url or database_url == 'file:sui_indexer.db':
+            # Use same relative path as setup_prisma
+            data_dir = os.path.join(os.getcwd(), 'data')
+            os.makedirs(data_dir, exist_ok=True)
+            db_path = os.path.join(data_dir, 'sui_indexer.db')
+            database_url = f'file:{os.path.relpath(db_path)}'
+        
+        self.get_logger().info(f"Working directory: {os.getcwd()}")
+        self.get_logger().info(f"Using database URL: {database_url}")
+        
         # Initialize everything
-        self.initialize()
+        self.initialize(database_url)
         
         # Create timer for polling
         polling_interval = self.get_parameter('polling_interval_ms').value / 1000.0  # Convert to seconds
@@ -156,14 +158,13 @@ class SuiIndexerNode(Node):
         self.event_thread = Thread(target=run_event_loop, daemon=True)
         self.event_thread.start()
 
-    def initialize(self):
+    def initialize(self, database_url):
         """Initialize clients and set up event tracking."""
         try:
             # Start event loop
             self.start_event_loop()
             
             # Initialize Prisma with database URL from parameter
-            database_url = self.get_parameter('database_url').value
             self.db = Prisma(
                 datasource={
                     "url": database_url
@@ -282,13 +283,8 @@ class SuiIndexerNode(Node):
                 
                 # Update cursor if we have new data
                 if next_cursor and data:
-                    # Convert dictionary cursor to EventID object
-                    cursor_obj = EventID(
-                        event_seq=str(next_cursor["eventSeq"]),
-                        tx_seq=next_cursor["txDigest"]
-                    )
-                    self.save_latest_cursor(tracker, cursor_obj)
-                    tracker.cursor = cursor_obj
+                    self.save_latest_cursor(tracker, next_cursor)
+                    tracker.cursor = next_cursor
                 
                 # Adjust polling interval if needed
                 if has_next_page:
