@@ -2,6 +2,8 @@
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 import json
+import asyncio
+from threading import Thread
 
 import rclpy
 from rclpy.node import Node
@@ -36,6 +38,10 @@ class SuiIndexerNode(Node):
     
     def __init__(self):
         super().__init__('sui_indexer')
+        
+        # Event loop management
+        self.event_loop: Optional[asyncio.AbstractEventLoop] = None
+        self.event_thread: Optional[Thread] = None
         
         # Declare parameters with proper types
         self.declare_parameter('package_id', '', descriptor=ParameterDescriptor(
@@ -127,12 +133,35 @@ class SuiIndexerNode(Node):
             rclpy.shutdown()
             return
     
+    def start_event_loop(self):
+        """Start asyncio event loop in separate thread."""
+        def run_event_loop():
+            self.event_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.event_loop)
+            self.event_loop.run_forever()
+
+        self.event_thread = Thread(target=run_event_loop, daemon=True)
+        self.event_thread.start()
+
     def initialize(self):
         """Initialize clients and set up event tracking."""
         try:
-            # Initialize Prisma
-            self.db = Prisma()
-            self.db.connect()
+            # Start event loop
+            self.start_event_loop()
+            
+            # Initialize Prisma with database URL from parameter
+            database_url = self.get_parameter('database_url').value
+            self.db = Prisma(
+                datasource={
+                    "url": database_url
+                }
+            )
+            
+            future = asyncio.run_coroutine_threadsafe(
+                self.db.connect(),
+                self.event_loop
+            )
+            future.result()  # Wait for connection
             
             # Initialize Sui client with proper network configuration
             network = self.get_parameter('network').value
@@ -242,18 +271,26 @@ class SuiIndexerNode(Node):
     
     def get_latest_cursor(self, tracker: EventTracker) -> Optional[EventID]:
         """Get the latest cursor for an event tracker."""
-        cursor = self.db.cursor.find_unique(
-            where={
-                "type": tracker.type
-            }
-        )
-        if cursor is None:
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                self.db.cursor.find_unique(
+                    where={
+                        "type": tracker.type
+                    }
+                ),
+                self.event_loop
+            )
+            cursor = future.result()
+            if cursor is None:
+                return None
+            return EventID(
+                tx_digest=cursor.txDigest,
+                event_seq=cursor.eventSeq,
+                timestamp=cursor.timestamp
+            )
+        except Exception as e:
+            self.get_logger().error(f"Error getting cursor: {str(e)}")
             return None
-        return EventID(
-            tx_digest=cursor.txDigest,
-            event_seq=cursor.eventSeq,
-            timestamp=cursor.timestamp
-        )
     
     def save_latest_cursor(self, tracker: EventTracker, cursor: EventID):
         """Save the latest cursor for an event tracker."""
@@ -263,15 +300,22 @@ class SuiIndexerNode(Node):
             "eventSeq": cursor.event_seq,
             "timestamp": cursor.timestamp
         }
-        self.db.cursor.upsert(
-            where={
-                "type": tracker.type
-            },
-            data={
-                "create": data,
-                "update": data
-            }
-        )
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                self.db.cursor.upsert(
+                    where={
+                        "type": tracker.type
+                    },
+                    data={
+                        "create": data,
+                        "update": data
+                    }
+                ),
+                self.event_loop
+            )
+            future.result()  # Wait for the operation to complete
+        except Exception as e:
+            self.get_logger().error(f"Error saving cursor: {str(e)}")
     
     def handle_lock_objects(self, events: List[Dict], type_: str):
         """Handle lock object events."""
@@ -348,6 +392,28 @@ class SuiIndexerNode(Node):
                     'update': update
                 }
             )
+
+    def destroy_node(self):
+        """Clean up node resources."""
+        if self.event_loop:
+            # Close database connection
+            if self.db:
+                future = asyncio.run_coroutine_threadsafe(
+                    self.db.disconnect(),
+                    self.event_loop
+                )
+                try:
+                    future.result(timeout=1.0)
+                except Exception as e:
+                    self.get_logger().error(f"Error disconnecting from database: {str(e)}")
+            
+            # Stop event loop
+            self.event_loop.call_soon_threadsafe(self.event_loop.stop)
+            
+        if self.event_thread:
+            self.event_thread.join(timeout=1.0)
+            
+        super().destroy_node()
 
 def main(args=None):
     rclpy.init(args=args)
