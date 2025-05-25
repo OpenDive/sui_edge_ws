@@ -13,6 +13,14 @@ from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 from prisma import Prisma
 from pysui.sui.sui_clients.sync_client import SuiClient
 from pysui.sui.sui_config import SuiConfig
+from pysui.sui.sui_constants import (
+    DEVNET_SUI_URL,
+    DEVNET_SOCKET_URL,
+    TESTNET_SUI_URL,
+    TESTNET_SOCKET_URL,
+    MAINNET_SUI_URL,
+    MAINNET_SOCKET_URL
+)
 
 @dataclass
 class EventTracker:
@@ -82,7 +90,8 @@ class SuiIndexerNode(Node):
         self.tracker_tasks = {}
         
         # Setup async loop
-        self.event_loop = asyncio.get_event_loop()
+        self.event_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.event_loop)
         
         # Initialize everything
         self.event_loop.create_task(self.initialize())
@@ -124,8 +133,22 @@ class SuiIndexerNode(Node):
             self.db = Prisma()
             await self.db.connect()
             
-            # Initialize Sui client
-            config = SuiConfig.default()
+            # Initialize Sui client with proper network configuration
+            network = self.get_parameter('network').value
+            network_urls = {
+                'devnet': (DEVNET_SUI_URL, DEVNET_SOCKET_URL),
+                'testnet': (TESTNET_SUI_URL, TESTNET_SOCKET_URL),
+                'mainnet': (MAINNET_SUI_URL, MAINNET_SOCKET_URL)
+            }
+            
+            if network not in network_urls:
+                raise ValueError(f"Invalid network {network}. Must be one of: devnet, testnet, mainnet")
+                
+            rpc_url, ws_url = network_urls[network]
+            config = SuiConfig.user_config(
+                rpc_url=rpc_url,
+                ws_url=ws_url
+            )
             self.sui_client = SuiClient(config)
             
             # Set up event trackers
@@ -182,6 +205,7 @@ class SuiIndexerNode(Node):
             
             # Process events
             if data:
+                self.get_logger().info("Found events:" + str(data))
                 await tracker.callback(data, tracker.type)
                 
                 # Publish events to ROS topics
@@ -327,6 +351,27 @@ class SuiIndexerNode(Node):
                     'update': update
                 }
             )
+
+    def __del__(self):
+        """Cleanup when the node is destroyed."""
+        if self.event_loop:
+            # Cancel all running tasks
+            for task in asyncio.all_tasks(self.event_loop):
+                task.cancel()
+            # Run the event loop one last time to process cancellations
+            self.event_loop.run_until_complete(asyncio.gather(*asyncio.all_tasks(self.event_loop), return_exceptions=True))
+            self.event_loop.close()
+            
+    def destroy_node(self):
+        """Clean up the node."""
+        # Cancel all running tasks
+        if self.event_loop:
+            for task in asyncio.all_tasks(self.event_loop):
+                task.cancel()
+            # Run the event loop one last time to process cancellations
+            self.event_loop.run_until_complete(asyncio.gather(*asyncio.all_tasks(self.event_loop), return_exceptions=True))
+            self.event_loop.close()
+        super().destroy_node()
 
 def main(args=None):
     rclpy.init(args=args)
