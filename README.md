@@ -102,7 +102,13 @@ ros2 launch sui_edge service_launch.py
 source ~/sui_edge_ws/install/setup.bash
 
 # Launch the indexer with your package ID
-ros2 launch sui_indexer indexer.launch.py package_id:=<your_package_id>
+ros2 launch sui_indexer indexer.launch.py "package_id:='0xfe09cf0b3d77678b99250572624bf74fe3b12af915c5db95f0ed5d755612eb68'"
+
+# Or with custom parameters
+ros2 launch sui_indexer indexer.launch.py \
+    "package_id:='0xfe09cf0b3d77678b99250572624bf74fe3b12af915c5db95f0ed5d755612eb68'" \
+    "network:='mainnet'" \
+    "polling_interval_ms:=2000"
 ```
 
 4. Monitor indexed events:

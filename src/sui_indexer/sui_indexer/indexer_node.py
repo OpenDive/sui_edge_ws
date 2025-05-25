@@ -8,6 +8,7 @@ import rclpy
 from rclpy.node import Node
 from builtin_interfaces.msg import Time
 from sui_indexer_msgs.msg import SuiEvent, IndexerStatus
+from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 
 from prisma import Prisma
 from pysui.sui.sui_clients.sync_client import SuiClient
@@ -26,17 +27,47 @@ class SuiIndexerNode(Node):
     def __init__(self):
         super().__init__('sui_indexer')
         
-        # Initialize parameters
-        self.declare_parameters(
-            namespace='',
-            parameters=[
-                ('polling_interval_ms', 1000),
-                ('network', 'testnet'),
-                ('default_limit', 50),
-                ('database_url', 'file:sui_indexer.db'),
-                ('package_id', '')
-            ]
-        )
+        # Declare parameters with proper types
+        self.declare_parameter('package_id', '', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_STRING,
+            description='The Sui package ID to index',
+            read_only=True,
+            additional_constraints='Required. Must be a valid Sui package ID'
+        ))
+        
+        self.declare_parameter('network', 'testnet', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_STRING,
+            description='Sui network to connect to',
+            additional_constraints='Must be one of: testnet, mainnet, devnet'
+        ))
+        
+        self.declare_parameter('polling_interval_ms', 1000, descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_INTEGER,
+            description='Polling interval in milliseconds',
+            additional_constraints='Must be > 0'
+        ))
+        
+        self.declare_parameter('default_limit', 50, descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_INTEGER,
+            description='Default limit for event queries',
+            additional_constraints='Must be between 1 and 100'
+        ))
+        
+        self.declare_parameter('database_url', 'file:sui_indexer.db', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_STRING,
+            description='Database URL for the indexer'
+        ))
+        
+        # Validate parameters
+        self._validate_parameters()
+        
+        # Log all settings
+        self.get_logger().info("Indexer Settings:")
+        self.get_logger().info(f"  Network: {self.get_parameter('network').value}")
+        self.get_logger().info(f"  Package ID: {self.get_parameter('package_id').value}")
+        self.get_logger().info(f"  Polling Interval: {self.get_parameter('polling_interval_ms').value}ms")
+        self.get_logger().info(f"  Default Limit: {self.get_parameter('default_limit').value}")
+        self.get_logger().info(f"  Database URL: {self.get_parameter('database_url').value}")
         
         # Publishers
         self.event_pub = self.create_publisher(SuiEvent, 'sui_events', 10)
@@ -56,6 +87,36 @@ class SuiIndexerNode(Node):
         # Initialize everything
         self.event_loop.create_task(self.initialize())
     
+    def _validate_parameters(self):
+        """Validate all parameters."""
+        # Validate package_id (required)
+        package_id = self.get_parameter('package_id').value
+        if not package_id:
+            self.get_logger().error("No package_id provided. This parameter is required.")
+            rclpy.shutdown()
+            return
+            
+        # Validate network
+        network = self.get_parameter('network').value
+        if network not in ['testnet', 'mainnet', 'devnet']:
+            self.get_logger().error(f"Invalid network value: {network}. Must be one of: testnet, mainnet, devnet")
+            rclpy.shutdown()
+            return
+            
+        # Validate polling_interval_ms
+        polling_interval = self.get_parameter('polling_interval_ms').value
+        if polling_interval <= 0:
+            self.get_logger().error(f"Invalid polling_interval_ms: {polling_interval}. Must be > 0")
+            rclpy.shutdown()
+            return
+            
+        # Validate default_limit
+        default_limit = self.get_parameter('default_limit').value
+        if not (1 <= default_limit <= 100):
+            self.get_logger().error(f"Invalid default_limit: {default_limit}. Must be between 1 and 100")
+            rclpy.shutdown()
+            return
+    
     async def initialize(self):
         """Initialize clients and start event tracking."""
         try:
@@ -68,24 +129,23 @@ class SuiIndexerNode(Node):
             self.sui_client = SuiClient(config)
             
             # Set up event trackers
-            package_id = self.get_parameter('package_id').value
             self.event_trackers = [
                 EventTracker(
-                    type=f"{package_id}::lock",
+                    type=f"{self.get_parameter('package_id').value}::lock",
                     filter={
                         "MoveEventModule": {
                             "module": "lock",
-                            "package": package_id
+                            "package": self.get_parameter('package_id').value
                         }
                     },
                     callback=self.handle_lock_objects
                 ),
                 EventTracker(
-                    type=f"{package_id}::shared",
+                    type=f"{self.get_parameter('package_id').value}::shared",
                     filter={
                         "MoveEventModule": {
                             "module": "shared",
-                            "package": package_id
+                            "package": self.get_parameter('package_id').value
                         }
                     },
                     callback=self.handle_escrow_objects

@@ -1,11 +1,42 @@
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, TimerAction, RegisterEventHandler
-from launch.substitutions import PathJoinSubstitution
+from launch.actions import ExecuteProcess, TimerAction, RegisterEventHandler, DeclareLaunchArgument
+from launch.substitutions import PathJoinSubstitution, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from launch.event_handlers import OnProcessExit
 
 def generate_launch_description():
+    # Declare all launch arguments
+    package_id_arg = DeclareLaunchArgument(
+        'package_id',
+        description='[Required] The Sui package ID to index',
+        default_value='""'  # Empty string as default to ensure string type
+    )
+    
+    network_arg = DeclareLaunchArgument(
+        'network',
+        default_value='testnet',
+        description='Sui network to connect to (testnet, mainnet, devnet)'
+    )
+    
+    polling_interval_arg = DeclareLaunchArgument(
+        'polling_interval_ms',
+        default_value='1000',
+        description='Polling interval in milliseconds'
+    )
+    
+    default_limit_arg = DeclareLaunchArgument(
+        'default_limit',
+        default_value='50',
+        description='Default limit for event queries'
+    )
+    
+    database_url_arg = DeclareLaunchArgument(
+        'database_url',
+        default_value='file:sui_indexer.db',
+        description='Database URL for the indexer'
+    )
+    
     pkg_share = FindPackageShare('sui_indexer')
     
     # First run Prisma setup
@@ -22,10 +53,11 @@ def generate_launch_description():
         name='sui_indexer',
         output='screen',
         parameters=[{
-            'polling_interval_ms': 1000,
-            'network': 'testnet',
-            'default_limit': 50,
-            'database_url': 'file:sui_indexer.db'
+            'polling_interval_ms': LaunchConfiguration('polling_interval_ms'),
+            'network': LaunchConfiguration('network'),
+            'default_limit': LaunchConfiguration('default_limit'),
+            'database_url': LaunchConfiguration('database_url'),
+            'package_id': LaunchConfiguration('package_id', default='""')  # Ensure string type
         }]
     )
     
@@ -36,6 +68,12 @@ def generate_launch_description():
     )
     
     return LaunchDescription([
+        # Add all argument declarations
+        package_id_arg,      # Required - no default value
+        network_arg,         # Optional with defaults
+        polling_interval_arg,
+        default_limit_arg,
+        database_url_arg,
         setup_prisma,
         # Only start the indexer after prisma_setup exits successfully
         RegisterEventHandler(
