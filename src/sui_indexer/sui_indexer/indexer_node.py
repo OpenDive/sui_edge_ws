@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 import json
 import asyncio
 from threading import Thread
@@ -225,47 +225,48 @@ class SuiIndexerNode(Node):
             self.get_logger().error(f"Initialization error: {str(e)}")
             rclpy.shutdown()
     
-    def poll_events(self):
-        """Timer callback to poll for events."""
-        for tracker in self.event_trackers:
-            try:
-                self.get_logger().info(f"Current tracker cursor type: {type(tracker.cursor)}, value: {tracker.cursor}")
-                
-                # Convert dict cursor to EventID for Sui query
-                query_cursor = None
-                if tracker.cursor:
-                    query_cursor = EventID(
-                        event_seq=str(tracker.cursor["eventSeq"]),
-                        tx_seq=tracker.cursor["txDigest"]
-                    )
-                
-                # Query events from the chain using the proper builder
-                query_builder = QueryEvents(
-                    query=tracker.filter,
-                    cursor=query_cursor,
-                    limit=self.get_parameter('default_limit').value,
-                    descending_order=False  # We want ascending order like the TypeScript version
+    async def execute_event_job(self, tracker: EventTracker) -> Tuple[Optional[dict], bool]:
+        """Execute a single event job, matching TypeScript implementation pattern."""
+        try:
+            self.get_logger().info(f"Current tracker cursor type: {type(tracker.cursor)}, value: {tracker.cursor}")
+            
+            # Convert dict cursor to EventID for Sui query
+            query_cursor = None
+            if tracker.cursor:
+                query_cursor = EventID(
+                    event_seq=str(tracker.cursor["eventSeq"]),
+                    tx_seq=tracker.cursor["txDigest"]
                 )
-                
-                result = self.sui_client.execute(query_builder)
-                if not result.is_ok():
-                    self.get_logger().error(f"Failed to query events: {result.result_string}")
-                    continue
-                
-                # Extract data from the result
-                events_data = result.result_data
-                data = events_data.data
-                has_next_page = events_data.has_next_page
-                next_cursor = events_data.next_cursor
-                
-                self.get_logger().info(f"Query result - Events: {len(data) if data else 0}, HasNextPage: {has_next_page}")
-                if next_cursor:
-                    self.get_logger().info(f"Next cursor: {next_cursor}")
-                
-                # Process events if we have any
-                if data and len(data) > 0:
-                    self.get_logger().info(f"Processing {len(data)} events")
-                    tracker.callback(data, tracker.type)
+            
+            # Query events from the chain
+            query_builder = QueryEvents(
+                query=tracker.filter,
+                cursor=query_cursor,
+                limit=self.get_parameter('default_limit').value,
+                descending_order=False
+            )
+            
+            result = self.sui_client.execute(query_builder)
+            if not result.is_ok():
+                self.get_logger().error(f"Failed to query events: {result.result_string}")
+                return tracker.cursor, False
+            
+            # Extract data from the result
+            events_data = result.result_data
+            data = events_data.data
+            has_next_page = events_data.has_next_page
+            next_cursor = events_data.next_cursor
+            
+            self.get_logger().info(f"Query result - Events: {len(data) if data else 0}, HasNextPage: {has_next_page}")
+            if next_cursor:
+                self.get_logger().info(f"Next cursor: {next_cursor}")
+            
+            # Process events and update cursor only if we have both new data and next cursor
+            if next_cursor and data and len(data) > 0:
+                self.get_logger().info(f"Processing {len(data)} events")
+                try:
+                    # Directly await the callback since we're already in the async context
+                    await tracker.callback(data, tracker.type)
                     
                     # Publish events to ROS topics
                     for event in data:
@@ -285,26 +286,51 @@ class SuiIndexerNode(Node):
                         
                         self.event_pub.publish(msg)
                     
-                    # Only update cursor if we processed new events
-                    if next_cursor:
-                        self.get_logger().info(f"Saving new cursor position")
-                        self.save_latest_cursor(tracker, next_cursor)
-                        tracker.cursor = next_cursor
-                else:
-                    self.get_logger().info("No new events to process")
+                    # Update cursor after successful processing
+                    await self.save_latest_cursor(tracker, next_cursor)
+                    return next_cursor, has_next_page
+                    
+                except Exception as e:
+                    self.get_logger().error(f"Error processing events: {str(e)}")
+                    return tracker.cursor, False
+            else:
+                self.get_logger().info("No new events to process or no next cursor")
+                return tracker.cursor, False
+            
+        except Exception as e:
+            self.get_logger().error(f"Error in execute_event_job: {str(e)}")
+            return tracker.cursor, False
+    
+    def poll_events(self):
+        """Timer callback to poll for events."""
+        for tracker in self.event_trackers:
+            try:
+                # Execute event job and get result
+                cursor, has_next_page = asyncio.run_coroutine_threadsafe(
+                    self.execute_event_job(tracker),
+                    self.event_loop
+                ).result()
                 
-                # Adjust polling interval based on whether there are more events
+                # Update tracker with new cursor
+                tracker.cursor = cursor
+                
+                # Use timer reset for proper ROS2 event loop handling
                 if has_next_page:
-                    self.get_logger().info("More events available, polling immediately")
-                    self.polling_timer.timer_period_ns = 0  # Poll immediately
+                    self.get_logger().info("More events available, polling with minimal delay")
+                    self.polling_timer.timer_period_ns = 1000000  # 1ms in nanoseconds
+                    self.polling_timer.reset()
                 else:
                     interval_ms = self.get_parameter('polling_interval_ms').value
                     self.get_logger().info(f"No more events, waiting {interval_ms}ms")
                     self.polling_timer.timer_period_ns = interval_ms * 1000000  # Convert ms to ns
+                    self.polling_timer.reset()
                 
             except Exception as e:
-                self.get_logger().error(f"Error polling events: {str(e)}")
-                continue
+                self.get_logger().error(f"Error in poll_events: {str(e)}")
+                # On error, keep current cursor and wait normal interval
+                interval_ms = self.get_parameter('polling_interval_ms').value
+                self.polling_timer.timer_period_ns = interval_ms * 1000000
+                self.polling_timer.reset()
     
     def get_latest_cursor(self, tracker: EventTracker) -> Optional[dict]:
         """Get the latest cursor for an event tracker."""
@@ -359,7 +385,7 @@ class SuiIndexerNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error saving cursor: {str(e)}")
     
-    def handle_lock_objects(self, events: List[Dict], type_: str):
+    async def handle_lock_objects(self, events: List[Dict], type_: str):
         """Handle lock object events."""
         updates = {}
         
@@ -388,21 +414,17 @@ class SuiIndexerNode(Node):
         # Update database
         for update in updates.values():
             try:
-                future = asyncio.run_coroutine_threadsafe(
-                    self.db.locked.upsert(
-                        where={'objectId': update['objectId']},
-                        data={
-                            'create': update,
-                            'update': update
-                        }
-                    ),
-                    self.event_loop
+                await self.db.locked.upsert(
+                    where={'objectId': update['objectId']},
+                    data={
+                        'create': update,
+                        'update': update
+                    }
                 )
-                future.result()  # Wait for the operation to complete
             except Exception as e:
                 self.get_logger().error(f"Error updating locked object: {str(e)}")
     
-    def handle_escrow_objects(self, events: List[Dict], type_: str):
+    async def handle_escrow_objects(self, events: List[Dict], type_: str):
         """Handle escrow object events."""
         updates = {}
         
@@ -435,17 +457,13 @@ class SuiIndexerNode(Node):
         # Update database
         for update in updates.values():
             try:
-                future = asyncio.run_coroutine_threadsafe(
-                    self.db.escrow.upsert(
-                        where={'objectId': update['objectId']},
-                        data={
-                            'create': update,
-                            'update': update
-                        }
-                    ),
-                    self.event_loop
+                await self.db.escrow.upsert(
+                    where={'objectId': update['objectId']},
+                    data={
+                        'create': update,
+                        'update': update
+                    }
                 )
-                future.result()  # Wait for the operation to complete
             except Exception as e:
                 self.get_logger().error(f"Error updating escrow object: {str(e)}")
 
