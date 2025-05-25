@@ -99,14 +99,14 @@ class SuiIndexerNode(Node):
         # Event trackers
         self.event_trackers: List[EventTracker] = []
         
-        # Get database URL from parameter or use default relative path
+        # Get database URL from parameter or use default in package share
         database_url = self.get_parameter('database_url').value
         if not database_url or database_url == 'file:sui_indexer.db':
-            # Use same relative path as setup_prisma
-            data_dir = os.path.join(os.getcwd(), 'data')
-            os.makedirs(data_dir, exist_ok=True)
+            # Use package share directory for default database location
+            pkg_share = get_package_share_directory('sui_indexer')
+            data_dir = os.path.join(pkg_share, 'data')
             db_path = os.path.join(data_dir, 'sui_indexer.db')
-            database_url = f'file:{os.path.relpath(db_path)}'
+            database_url = f'file:{db_path}'
         
         self.get_logger().info(f"Working directory: {os.getcwd()}")
         self.get_logger().info(f"Using database URL: {database_url}")
@@ -388,13 +388,20 @@ class SuiIndexerNode(Node):
         
         # Update database
         for update in updates.values():
-            self.db.locked.upsert(
-                where={'objectId': update['objectId']},
-                data={
-                    'create': update,
-                    'update': update
-                }
-            )
+            try:
+                future = asyncio.run_coroutine_threadsafe(
+                    self.db.locked.upsert(
+                        where={'objectId': update['objectId']},
+                        data={
+                            'create': update,
+                            'update': update
+                        }
+                    ),
+                    self.event_loop
+                )
+                future.result()  # Wait for the operation to complete
+            except Exception as e:
+                self.get_logger().error(f"Error updating locked object: {str(e)}")
     
     def handle_escrow_objects(self, events: List[Dict], type_: str):
         """Handle escrow object events."""
@@ -428,13 +435,20 @@ class SuiIndexerNode(Node):
         
         # Update database
         for update in updates.values():
-            self.db.escrow.upsert(
-                where={'objectId': update['objectId']},
-                data={
-                    'create': update,
-                    'update': update
-                }
-            )
+            try:
+                future = asyncio.run_coroutine_threadsafe(
+                    self.db.escrow.upsert(
+                        where={'objectId': update['objectId']},
+                        data={
+                            'create': update,
+                            'update': update
+                        }
+                    ),
+                    self.event_loop
+                )
+                future.result()  # Wait for the operation to complete
+            except Exception as e:
+                self.get_logger().error(f"Error updating escrow object: {str(e)}")
 
     def destroy_node(self):
         """Clean up node resources."""
