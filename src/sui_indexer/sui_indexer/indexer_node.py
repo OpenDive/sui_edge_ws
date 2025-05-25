@@ -294,13 +294,14 @@ class SuiIndexerNode(Node):
                 ),
                 self.event_loop
             )
-            cursor = future.result()
-            if cursor is None:
+            cursor_data = future.result()
+            if cursor_data is None:
                 return None
+                
+            # Convert database cursor to EventID object
             return EventID(
-                tx_digest=cursor.txDigest,
-                event_seq=cursor.eventSeq,
-                timestamp=cursor.timestamp
+                event_seq=cursor_data.eventSeq,
+                tx_seq=cursor_data.txDigest
             )
         except Exception as e:
             self.get_logger().error(f"Error getting cursor: {str(e)}")
@@ -308,10 +309,11 @@ class SuiIndexerNode(Node):
     
     def save_latest_cursor(self, tracker: EventTracker, cursor: EventID):
         """Save the latest cursor for an event tracker."""
+        # Access the underlying map from EventID object
         data = {
             "id": tracker.type,
-            "txDigest": cursor['txDigest'],
-            "eventSeq": cursor['eventSeq']
+            "txDigest": cursor.map["txDigest"],
+            "eventSeq": cursor.map["eventSeq"]
         }
         try:
             future = asyncio.run_coroutine_threadsafe(
@@ -322,8 +324,8 @@ class SuiIndexerNode(Node):
                     data={
                         "create": data,
                         "update": {
-                            "txDigest": cursor['txDigest'],
-                            "eventSeq": cursor['eventSeq']
+                            "txDigest": cursor.map["txDigest"],
+                            "eventSeq": cursor.map["eventSeq"]
                         }
                     }
                 ),
