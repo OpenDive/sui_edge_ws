@@ -24,12 +24,13 @@ from pysui.sui.sui_constants import (
 )
 from pysui.sui.sui_builders.get_builders import QueryEvents
 from pysui.sui.sui_types.collections import EventID
+from pysui.sui.sui_types.event_filter import MoveEventModuleQuery
 
 @dataclass
 class EventTracker:
     """Tracks events for a specific module."""
     type: str
-    filter: Dict[str, Any]
+    filter: MoveEventModuleQuery
     callback: Callable
     cursor: Optional[EventID] = None
 
@@ -181,26 +182,24 @@ class SuiIndexerNode(Node):
             )
             self.sui_client = SuiClient(config)
             
-            # Set up event trackers
+            package_id = self.get_parameter('package_id').value
+            
+            # Set up event trackers with proper filter objects
             self.event_trackers = [
                 EventTracker(
-                    type=f"{self.get_parameter('package_id').value}::lock",
-                    filter={
-                        "MoveEventModule": {
-                            "module": "lock",
-                            "package": self.get_parameter('package_id').value
-                        }
-                    },
+                    type=f"{package_id}::lock",
+                    filter=MoveEventModuleQuery(
+                        module="lock",
+                        package_id=package_id
+                    ),
                     callback=self.handle_lock_objects
                 ),
                 EventTracker(
-                    type=f"{self.get_parameter('package_id').value}::shared",
-                    filter={
-                        "MoveEventModule": {
-                            "module": "shared",
-                            "package": self.get_parameter('package_id').value
-                        }
-                    },
+                    type=f"{package_id}::shared",
+                    filter=MoveEventModuleQuery(
+                        module="shared",
+                        package_id=package_id
+                    ),
                     callback=self.handle_escrow_objects
                 )
             ]
@@ -219,7 +218,7 @@ class SuiIndexerNode(Node):
             try:
                 # Query events from the chain using the proper builder
                 query_builder = QueryEvents(
-                    query=tracker.filter,
+                    query=tracker.filter,  # Pass the MoveEventModuleQuery directly
                     cursor=tracker.cursor,
                     limit=self.get_parameter('default_limit').value,
                     descending_order=False  # We want ascending order like the TypeScript version
@@ -236,20 +235,28 @@ class SuiIndexerNode(Node):
                 has_next_page = events_data.has_next_page
                 next_cursor = events_data.next_cursor
                 
+                # Debug logging
+                self.get_logger().info(f"Events data type: {type(events_data)}")
+                self.get_logger().info(f"Data type: {type(data)}")
+                if data:
+                    self.get_logger().info(f"First event type: {type(data[0])}")
+                    self.get_logger().info(f"First event dir: {dir(data[0])}")
+                    self.get_logger().info(f"First event content: {data[0]}")
+                
                 # Process events
                 if data:
-                    self.get_logger().info("Found events:" + str(data))
+                    self.get_logger().info(f"Found {len(data)} events")
                     tracker.callback(data, tracker.type)
                     
                     # Publish events to ROS topics
                     for event in data:
                         msg = SuiEvent()
-                        msg.event_type = event.get('type', '')
-                        msg.transaction_digest = event.get('txDigest', '')
-                        msg.event_sequence = str(event.get('eventSeq', ''))
-                        msg.module_name = tracker.filter['MoveEventModule']['module']
-                        msg.package_id = tracker.filter['MoveEventModule']['package']
-                        msg.parsed_json = json.dumps(event.get('parsedJson', {}))
+                        msg.event_type = event.event_type
+                        msg.transaction_digest = event.transaction_digest
+                        msg.event_sequence = str(event.sequence_number)
+                        msg.module_name = tracker.filter.filter['MoveEventModule']['module']
+                        msg.package_id = tracker.filter.filter['MoveEventModule']['package']
+                        msg.parsed_json = json.dumps(event.parsed_json)
                         # Set timestamp
                         now = self.get_clock().now().to_msg()
                         msg.timestamp = now
@@ -268,6 +275,7 @@ class SuiIndexerNode(Node):
                 
             except Exception as e:
                 self.get_logger().error(f"Error polling events: {str(e)}")
+                continue
     
     def get_latest_cursor(self, tracker: EventTracker) -> Optional[EventID]:
         """Get the latest cursor for an event tracker."""
@@ -275,7 +283,7 @@ class SuiIndexerNode(Node):
             future = asyncio.run_coroutine_threadsafe(
                 self.db.cursor.find_unique(
                     where={
-                        "type": tracker.type
+                        "id": tracker.type
                     }
                 ),
                 self.event_loop
@@ -295,7 +303,7 @@ class SuiIndexerNode(Node):
     def save_latest_cursor(self, tracker: EventTracker, cursor: EventID):
         """Save the latest cursor for an event tracker."""
         data = {
-            "type": tracker.type,
+            "id": tracker.type,
             "txDigest": cursor.tx_digest,
             "eventSeq": cursor.event_seq,
             "timestamp": cursor.timestamp
@@ -304,11 +312,15 @@ class SuiIndexerNode(Node):
             future = asyncio.run_coroutine_threadsafe(
                 self.db.cursor.upsert(
                     where={
-                        "type": tracker.type
+                        "id": tracker.type
                     },
                     data={
                         "create": data,
-                        "update": data
+                        "update": {
+                            "txDigest": cursor.tx_digest,
+                            "eventSeq": cursor.event_seq,
+                            "timestamp": cursor.timestamp
+                        }
                     }
                 ),
                 self.event_loop
@@ -322,10 +334,10 @@ class SuiIndexerNode(Node):
         updates = {}
         
         for event in events:
-            if not event['type'].startswith(type_):
+            if not event.event_type.startswith(type_):
                 raise ValueError('Invalid event module origin')
                 
-            data = event['parsedJson']
+            data = event.parsed_json
             is_deletion_event = 'key_id' not in data
             
             if data['lock_id'] not in updates:
@@ -358,21 +370,21 @@ class SuiIndexerNode(Node):
         updates = {}
         
         for event in events:
-            if not event['type'].startswith(type_):
+            if not event.event_type.startswith(type_):
                 raise ValueError('Invalid event module origin')
                 
-            data = event['parsedJson']
+            data = event.parsed_json
             
             if data['escrow_id'] not in updates:
                 updates[data['escrow_id']] = {
                     'objectId': data['escrow_id']
                 }
             
-            if event['type'].endswith('::EscrowCancelled'):
+            if event.event_type.endswith('::EscrowCancelled'):
                 updates[data['escrow_id']]['cancelled'] = True
                 continue
                 
-            if event['type'].endswith('::EscrowSwapped'):
+            if event.event_type.endswith('::EscrowSwapped'):
                 updates[data['escrow_id']]['swapped'] = True
                 continue
             
