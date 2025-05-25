@@ -252,14 +252,20 @@ class SuiIndexerNode(Node):
                     for event in data:
                         msg = SuiEvent()
                         msg.event_type = event.event_type
-                        msg.transaction_digest = event.transaction_digest
-                        msg.event_sequence = str(event.sequence_number)
-                        msg.module_name = tracker.filter.filter['MoveEventModule']['module']
-                        msg.package_id = tracker.filter.filter['MoveEventModule']['package']
-                        msg.parsed_json = json.dumps(event.parsed_json)
-                        # Set timestamp
-                        now = self.get_clock().now().to_msg()
-                        msg.timestamp = now
+                        msg.tx_digest = event.event_id['txDigest']
+                        msg.event_seq = int(event.event_id['eventSeq'])  # Convert to uint64
+                        msg.event_data = json.dumps(event.parsed_json)
+                        msg.module_name = event.transaction_module
+                        msg.package_id = event.package_id
+                        
+                        # Use event timestamp instead of current time
+                        timestamp = Time()
+                        # Convert milliseconds to seconds and nanoseconds
+                        ms = int(event.timestamp_ms)
+                        timestamp.sec = ms // 1000
+                        timestamp.nanosec = (ms % 1000) * 1000000
+                        msg.timestamp = timestamp
+                        
                         self.event_pub.publish(msg)
                 
                 # Update cursor if we have new data
@@ -304,9 +310,9 @@ class SuiIndexerNode(Node):
         """Save the latest cursor for an event tracker."""
         data = {
             "id": tracker.type,
-            "txDigest": cursor.tx_digest,
-            "eventSeq": cursor.event_seq,
-            "timestamp": cursor.timestamp
+            "txDigest": cursor.event_id['txDigest'],
+            "eventSeq": cursor.event_id['eventSeq'],
+            "timestamp": cursor.timestamp_ms
         }
         try:
             future = asyncio.run_coroutine_threadsafe(
@@ -317,9 +323,9 @@ class SuiIndexerNode(Node):
                     data={
                         "create": data,
                         "update": {
-                            "txDigest": cursor.tx_digest,
-                            "eventSeq": cursor.event_seq,
-                            "timestamp": cursor.timestamp
+                            "txDigest": cursor.event_id['txDigest'],
+                            "eventSeq": cursor.event_id['eventSeq'],
+                            "timestamp": cursor.timestamp_ms
                         }
                     }
                 ),
