@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import asyncio
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 import json
@@ -21,6 +20,7 @@ from pysui.sui.sui_constants import (
     MAINNET_SUI_URL,
     MAINNET_SOCKET_URL
 )
+from pysui.sui.sui_builders.get_builders import QueryEvents
 
 @dataclass
 class EventTracker:
@@ -28,6 +28,7 @@ class EventTracker:
     type: str
     filter: Dict[str, Any]
     callback: Callable
+    cursor: Optional[Dict] = None
 
 class SuiIndexerNode(Node):
     """ROS2 node for indexing Sui blockchain events."""
@@ -87,15 +88,14 @@ class SuiIndexerNode(Node):
         
         # Event trackers
         self.event_trackers: List[EventTracker] = []
-        self.tracker_tasks = {}
-        
-        # Setup async loop
-        self.event_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.event_loop)
         
         # Initialize everything
-        self.event_loop.create_task(self.initialize())
-    
+        self.initialize()
+        
+        # Create timer for polling
+        polling_interval = self.get_parameter('polling_interval_ms').value / 1000.0  # Convert to seconds
+        self.polling_timer = self.create_timer(polling_interval, self.poll_events)
+        
     def _validate_parameters(self):
         """Validate all parameters."""
         # Validate package_id (required)
@@ -126,12 +126,12 @@ class SuiIndexerNode(Node):
             rclpy.shutdown()
             return
     
-    async def initialize(self):
-        """Initialize clients and start event tracking."""
+    def initialize(self):
+        """Initialize clients and set up event tracking."""
         try:
             # Initialize Prisma
             self.db = Prisma()
-            await self.db.connect()
+            self.db.connect()
             
             # Initialize Sui client with proper network configuration
             network = self.get_parameter('network').value
@@ -175,98 +175,87 @@ class SuiIndexerNode(Node):
                 )
             ]
             
-            # Start tracking
-            await self.setup_listeners()
+            # Load initial cursors
+            for tracker in self.event_trackers:
+                tracker.cursor = self.get_latest_cursor(tracker)
             
         except Exception as e:
             self.get_logger().error(f"Initialization error: {str(e)}")
             rclpy.shutdown()
     
-    async def setup_listeners(self):
-        """Set up event listeners for each tracker."""
-        for event in self.event_trackers:
-            self.tracker_tasks[event.type] = self.event_loop.create_task(
-                self.run_event_job(event, await self.get_latest_cursor(event))
-            )
-    
-    async def execute_event_job(self, tracker: EventTracker, cursor: Optional[Dict]) -> Dict:
-        """Execute a single event job."""
-        try:
-            # Query events from the chain
-            response = await self.sui_client.queryEvents({
-                "query": tracker.filter,
-                "cursor": cursor,
-                "order": "ascending"
-            })
-            
-            data = response.get('data', [])
-            has_next_page = response.get('hasNextPage', False)
-            next_cursor = response.get('nextCursor')
-            
-            # Process events
-            if data:
-                self.get_logger().info("Found events:" + str(data))
-                await tracker.callback(data, tracker.type)
+    def poll_events(self):
+        """Timer callback to poll for events."""
+        for tracker in self.event_trackers:
+            try:
+                # Query events from the chain using the proper builder
+                query_builder = QueryEvents(
+                    query=tracker.filter,
+                    cursor=tracker.cursor,
+                    limit=self.get_parameter('default_limit').value,
+                    descending_order=False  # We want ascending order like the TypeScript version
+                )
                 
-                # Publish events to ROS topics
-                for event in data:
-                    msg = SuiEvent()
-                    msg.event_type = event.get('type', '')
-                    msg.transaction_digest = event.get('txDigest', '')
-                    msg.event_sequence = str(event.get('eventSeq', ''))
-                    msg.module_name = tracker.filter['MoveEventModule']['module']
-                    msg.package_id = tracker.filter['MoveEventModule']['package']
-                    msg.parsed_json = json.dumps(event.get('parsedJson', {}))
-                    # Set timestamp
-                    now = self.get_clock().now().to_msg()
-                    msg.timestamp = now
-                    self.event_pub.publish(msg)
-            
-            # Update cursor if we have new data
-            if next_cursor and data:
-                await self.save_latest_cursor(tracker, next_cursor)
-                return {
-                    'cursor': next_cursor,
-                    'hasNextPage': has_next_page
-                }
+                result = self.sui_client.execute(query_builder)
+                if not result.is_ok():
+                    self.get_logger().error(f"Failed to query events: {result.result_string}")
+                    continue
                 
-        except Exception as e:
-            self.get_logger().error(f"Error in execute_event_job: {str(e)}")
-        
-        return {
-            'cursor': cursor,
-            'hasNextPage': False
-        }
+                # Extract data from the result
+                events_data = result.result_data
+                data = events_data.data
+                has_next_page = events_data.has_next_page
+                next_cursor = events_data.next_cursor
+                
+                # Process events
+                if data:
+                    self.get_logger().info("Found events:" + str(data))
+                    tracker.callback(data, tracker.type)
+                    
+                    # Publish events to ROS topics
+                    for event in data:
+                        msg = SuiEvent()
+                        msg.event_type = event.get('type', '')
+                        msg.transaction_digest = event.get('txDigest', '')
+                        msg.event_sequence = str(event.get('eventSeq', ''))
+                        msg.module_name = tracker.filter['MoveEventModule']['module']
+                        msg.package_id = tracker.filter['MoveEventModule']['package']
+                        msg.parsed_json = json.dumps(event.get('parsedJson', {}))
+                        # Set timestamp
+                        now = self.get_clock().now().to_msg()
+                        msg.timestamp = now
+                        self.event_pub.publish(msg)
+                
+                # Update cursor if we have new data
+                if next_cursor and data:
+                    self.save_latest_cursor(tracker, next_cursor)
+                    tracker.cursor = next_cursor
+                
+                # Adjust polling interval if needed
+                if has_next_page:
+                    self.polling_timer.timer_period_ns = 0  # Poll immediately
+                else:
+                    self.polling_timer.timer_period_ns = self.get_parameter('polling_interval_ms').value * 1000000  # Convert ms to ns
+                
+            except Exception as e:
+                self.get_logger().error(f"Error polling events: {str(e)}")
     
-    async def run_event_job(self, tracker: EventTracker, cursor: Optional[Dict]):
-        """Run event job continuously."""
-        while rclpy.ok():
-            result = await self.execute_event_job(tracker, cursor)
-            cursor = result['cursor']
-            
-            # Wait appropriate interval
-            await asyncio.sleep(
-                0 if result['hasNextPage'] else 
-                self.get_parameter('polling_interval_ms').value / 1000.0
-            )
-    
-    async def get_latest_cursor(self, tracker: EventTracker) -> Optional[Dict]:
+    def get_latest_cursor(self, tracker: EventTracker) -> Optional[Dict]:
         """Get the latest cursor for an event tracker."""
-        cursor = await self.db.cursor.find_unique(
+        cursor = self.db.cursor.find_unique(
             where={
                 'id': tracker.type
             }
         )
         return cursor
     
-    async def save_latest_cursor(self, tracker: EventTracker, cursor: Dict):
+    def save_latest_cursor(self, tracker: EventTracker, cursor: Dict):
         """Save the latest cursor for an event tracker."""
         data = {
             'eventSeq': cursor['eventSeq'],
             'txDigest': cursor['txDigest']
         }
         
-        await self.db.cursor.upsert(
+        self.db.cursor.upsert(
             where={
                 'id': tracker.type
             },
@@ -276,7 +265,7 @@ class SuiIndexerNode(Node):
             }
         )
     
-    async def handle_lock_objects(self, events: List[Dict], type_: str):
+    def handle_lock_objects(self, events: List[Dict], type_: str):
         """Handle lock object events."""
         updates = {}
         
@@ -304,7 +293,7 @@ class SuiIndexerNode(Node):
         
         # Update database
         for update in updates.values():
-            await self.db.locked.upsert(
+            self.db.locked.upsert(
                 where={'objectId': update['objectId']},
                 data={
                     'create': update,
@@ -312,7 +301,7 @@ class SuiIndexerNode(Node):
                 }
             )
     
-    async def handle_escrow_objects(self, events: List[Dict], type_: str):
+    def handle_escrow_objects(self, events: List[Dict], type_: str):
         """Handle escrow object events."""
         updates = {}
         
@@ -344,34 +333,13 @@ class SuiIndexerNode(Node):
         
         # Update database
         for update in updates.values():
-            await self.db.escrow.upsert(
+            self.db.escrow.upsert(
                 where={'objectId': update['objectId']},
                 data={
                     'create': update,
                     'update': update
                 }
             )
-
-    def __del__(self):
-        """Cleanup when the node is destroyed."""
-        if self.event_loop:
-            # Cancel all running tasks
-            for task in asyncio.all_tasks(self.event_loop):
-                task.cancel()
-            # Run the event loop one last time to process cancellations
-            self.event_loop.run_until_complete(asyncio.gather(*asyncio.all_tasks(self.event_loop), return_exceptions=True))
-            self.event_loop.close()
-            
-    def destroy_node(self):
-        """Clean up the node."""
-        # Cancel all running tasks
-        if self.event_loop:
-            for task in asyncio.all_tasks(self.event_loop):
-                task.cancel()
-            # Run the event loop one last time to process cancellations
-            self.event_loop.run_until_complete(asyncio.gather(*asyncio.all_tasks(self.event_loop), return_exceptions=True))
-            self.event_loop.close()
-        super().destroy_node()
 
 def main(args=None):
     rclpy.init(args=args)
