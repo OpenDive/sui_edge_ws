@@ -241,7 +241,7 @@ class SuiIndexerNode(Node):
                 
                 # Query events from the chain using the proper builder
                 query_builder = QueryEvents(
-                    query=tracker.filter,  # Pass the MoveEventModuleQuery directly
+                    query=tracker.filter,
                     cursor=query_cursor,
                     limit=self.get_parameter('default_limit').value,
                     descending_order=False  # We want ascending order like the TypeScript version
@@ -257,19 +257,14 @@ class SuiIndexerNode(Node):
                 data = events_data.data
                 has_next_page = events_data.has_next_page
                 next_cursor = events_data.next_cursor
-                self.get_logger().info(f"Received next_cursor type: {type(next_cursor)}, value: {next_cursor}")
                 
-                # Debug logging
-                self.get_logger().info(f"Events data type: {type(events_data)}")
-                self.get_logger().info(f"Data type: {type(data)}")
-                if data:
-                    self.get_logger().info(f"First event type: {type(data[0])}")
-                    self.get_logger().info(f"First event dir: {dir(data[0])}")
-                    self.get_logger().info(f"First event content: {data[0]}")
+                self.get_logger().info(f"Query result - Events: {len(data) if data else 0}, HasNextPage: {has_next_page}")
+                if next_cursor:
+                    self.get_logger().info(f"Next cursor: {next_cursor}")
                 
-                # Process events
-                if data:
-                    self.get_logger().info(f"Found {len(data)} events")
+                # Process events if we have any
+                if data and len(data) > 0:
+                    self.get_logger().info(f"Processing {len(data)} events")
                     tracker.callback(data, tracker.type)
                     
                     # Publish events to ROS topics
@@ -277,31 +272,35 @@ class SuiIndexerNode(Node):
                         msg = SuiEvent()
                         msg.event_type = event.event_type
                         msg.tx_digest = event.event_id['txDigest']
-                        msg.event_seq = int(event.event_id['eventSeq'])  # Convert to uint64
+                        msg.event_seq = int(event.event_id['eventSeq'])
                         msg.event_data = json.dumps(event.parsed_json)
                         msg.module_name = event.transaction_module
                         msg.package_id = event.package_id
                         
-                        # Use event timestamp instead of current time
                         timestamp = Time()
-                        # Convert milliseconds to seconds and nanoseconds
                         ms = int(event.timestamp_ms)
                         timestamp.sec = ms // 1000
                         timestamp.nanosec = (ms % 1000) * 1000000
                         msg.timestamp = timestamp
                         
                         self.event_pub.publish(msg)
+                    
+                    # Only update cursor if we processed new events
+                    if next_cursor:
+                        self.get_logger().info(f"Saving new cursor position")
+                        self.save_latest_cursor(tracker, next_cursor)
+                        tracker.cursor = next_cursor
+                else:
+                    self.get_logger().info("No new events to process")
                 
-                # Update cursor if we have new data
-                if next_cursor and data:
-                    self.save_latest_cursor(tracker, next_cursor)  # Save as dictionary
-                    tracker.cursor = next_cursor  # Store as dictionary
-                
-                # Adjust polling interval if needed
+                # Adjust polling interval based on whether there are more events
                 if has_next_page:
+                    self.get_logger().info("More events available, polling immediately")
                     self.polling_timer.timer_period_ns = 0  # Poll immediately
                 else:
-                    self.polling_timer.timer_period_ns = self.get_parameter('polling_interval_ms').value * 1000000  # Convert ms to ns
+                    interval_ms = self.get_parameter('polling_interval_ms').value
+                    self.get_logger().info(f"No more events, waiting {interval_ms}ms")
+                    self.polling_timer.timer_period_ns = interval_ms * 1000000  # Convert ms to ns
                 
             except Exception as e:
                 self.get_logger().error(f"Error polling events: {str(e)}")
