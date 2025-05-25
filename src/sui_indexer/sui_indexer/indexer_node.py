@@ -310,9 +310,8 @@ class SuiIndexerNode(Node):
         """Save the latest cursor for an event tracker."""
         data = {
             "id": tracker.type,
-            "txDigest": cursor.event_id['txDigest'],
-            "eventSeq": cursor.event_id['eventSeq'],
-            "timestamp": cursor.timestamp_ms
+            "txDigest": cursor['txDigest'],
+            "eventSeq": cursor['eventSeq']
         }
         try:
             future = asyncio.run_coroutine_threadsafe(
@@ -323,9 +322,8 @@ class SuiIndexerNode(Node):
                     data={
                         "create": data,
                         "update": {
-                            "txDigest": cursor.event_id['txDigest'],
-                            "eventSeq": cursor.event_id['eventSeq'],
-                            "timestamp": cursor.timestamp_ms
+                            "txDigest": cursor['txDigest'],
+                            "eventSeq": cursor['eventSeq']
                         }
                     }
                 ),
