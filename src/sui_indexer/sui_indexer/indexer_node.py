@@ -21,6 +21,7 @@ from pysui.sui.sui_constants import (
     MAINNET_SOCKET_URL
 )
 from pysui.sui.sui_builders.get_builders import QueryEvents
+from pysui.sui.sui_types.collections import EventID
 
 @dataclass
 class EventTracker:
@@ -28,7 +29,7 @@ class EventTracker:
     type: str
     filter: Dict[str, Any]
     callback: Callable
-    cursor: Optional[Dict] = None
+    cursor: Optional[EventID] = None
 
 class SuiIndexerNode(Node):
     """ROS2 node for indexing Sui blockchain events."""
@@ -239,29 +240,36 @@ class SuiIndexerNode(Node):
             except Exception as e:
                 self.get_logger().error(f"Error polling events: {str(e)}")
     
-    def get_latest_cursor(self, tracker: EventTracker) -> Optional[Dict]:
+    def get_latest_cursor(self, tracker: EventTracker) -> Optional[EventID]:
         """Get the latest cursor for an event tracker."""
         cursor = self.db.cursor.find_unique(
             where={
-                'id': tracker.type
+                "type": tracker.type
             }
         )
-        return cursor
+        if cursor is None:
+            return None
+        return EventID(
+            tx_digest=cursor.txDigest,
+            event_seq=cursor.eventSeq,
+            timestamp=cursor.timestamp
+        )
     
-    def save_latest_cursor(self, tracker: EventTracker, cursor: Dict):
+    def save_latest_cursor(self, tracker: EventTracker, cursor: EventID):
         """Save the latest cursor for an event tracker."""
         data = {
-            'eventSeq': cursor['eventSeq'],
-            'txDigest': cursor['txDigest']
+            "type": tracker.type,
+            "txDigest": cursor.tx_digest,
+            "eventSeq": cursor.event_seq,
+            "timestamp": cursor.timestamp
         }
-        
         self.db.cursor.upsert(
             where={
-                'id': tracker.type
+                "type": tracker.type
             },
             data={
-                'create': {'id': tracker.type, **data},
-                'update': data
+                "create": data,
+                "update": data
             }
         )
     
