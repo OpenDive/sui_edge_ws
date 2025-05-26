@@ -237,6 +237,9 @@ class SuiIndexerNode(Node):
                     event_seq=str(tracker.cursor["eventSeq"]),
                     tx_seq=tracker.cursor["txDigest"]
                 )
+                self.get_logger().info(f"Starting query with cursor - eventSeq: {query_cursor.map['eventSeq']}, txDigest: {query_cursor.map['txDigest']}")
+            else:
+                self.get_logger().info("Starting query with no cursor")
             
             # Query events from the chain
             query_builder = QueryEvents(
@@ -253,6 +256,8 @@ class SuiIndexerNode(Node):
             
             # Extract data from the result
             events_data = result.result_data
+            self.get_logger().info(f"Query result raw data: {events_data}")
+            
             data = events_data.data
             has_next_page = events_data.has_next_page
             next_cursor = events_data.next_cursor
@@ -264,11 +269,21 @@ class SuiIndexerNode(Node):
             # Process events and update cursor only if we have both new data and next cursor
             if next_cursor and data and len(data) > 0:
                 self.get_logger().info(f"Processing {len(data)} events")
+                self.get_logger().info(f"First event in batch - ID: {data[0].event_id}, Type: {data[0].event_type}")
+                self.get_logger().info(f"Last event in batch - ID: {data[-1].event_id}, Type: {data[-1].event_type}")
+                
                 try:
-                    # Directly await the callback since we're already in the async context
+                    self.get_logger().info(f"Previous cursor before processing: {tracker.cursor}")
+                    # Process events
+                    self.get_logger().info("Starting callback execution...")
+                    for idx, event in enumerate(data):
+                        self.get_logger().info(f"Processing event {idx + 1}/{len(data)} - Type: {event.event_type}")
+                    
                     await tracker.callback(data, tracker.type)
+                    self.get_logger().info("Callback execution completed")
                     
                     # Publish events to ROS topics
+                    self.get_logger().info("Starting to publish events to ROS topics...")
                     for event in data:
                         msg = SuiEvent()
                         msg.event_type = event.event_type
@@ -283,18 +298,23 @@ class SuiIndexerNode(Node):
                         timestamp.sec = ms // 1000
                         timestamp.nanosec = (ms % 1000) * 1000000
                         msg.timestamp = timestamp
-
-                        self.get_logger().info(f"Publishing event: {msg}")
+                        
+                        # self.get_logger().info(f"Publishing event: {msg}")
                         
                         self.event_pub.publish(msg)
                     
                     # Update cursor after successful processing
+                    self.get_logger().info(f"Saving new cursor: {next_cursor}")
                     await self.save_latest_cursor(tracker, next_cursor)
-                    return next_cursor, has_next_page
+                    self.get_logger().info(f"Successfully saved cursor to database: {next_cursor}")
+                    self.get_logger().info(f"Returning from execute_event_job with cursor: {next_cursor} and has_next_page: {has_next_page}")
                     
                 except Exception as e:
                     self.get_logger().error(f"Error processing events: {str(e)}")
                     return tracker.cursor, False
+                
+                # Return statement moved outside try block but still inside if block
+                return next_cursor, has_next_page
             else:
                 self.get_logger().info("No new events to process or no next cursor")
                 return tracker.cursor, False
@@ -305,27 +325,41 @@ class SuiIndexerNode(Node):
     
     def poll_events(self):
         """Timer callback to poll for events."""
+        self.get_logger().info("=== Starting poll_events cycle ===")
+        
         for tracker in self.event_trackers:
             try:
+                self.get_logger().info(f"Starting poll_events with tracker type: {tracker.type}")
+                self.get_logger().info(f"Current tracker cursor: {tracker.cursor}")
+                
                 # Execute event job and get result
+                self.get_logger().info("Calling execute_event_job...")
                 cursor, has_next_page = asyncio.run_coroutine_threadsafe(
                     self.execute_event_job(tracker),
                     self.event_loop
                 ).result()
                 
+                self.get_logger().info(f"Got result from execute_event_job - cursor: {cursor}, has_next_page: {has_next_page}")
+                
                 # Update tracker with new cursor
+                old_cursor = tracker.cursor
                 tracker.cursor = cursor
+                self.get_logger().info(f"Updated tracker cursor from {old_cursor} to {tracker.cursor}")
                 
                 # Use timer reset for proper ROS2 event loop handling
                 if has_next_page:
-                    self.get_logger().info("More events available, polling with minimal delay")
+                    self.get_logger().info("More events available, resetting timer to 1ms")
+                    old_period = self.polling_timer.timer_period_ns
                     self.polling_timer.timer_period_ns = 1000000  # 1ms in nanoseconds
                     self.polling_timer.reset()
+                    self.get_logger().info(f"Timer period changed from {old_period}ns to {self.polling_timer.timer_period_ns}ns")
                 else:
                     interval_ms = self.get_parameter('polling_interval_ms').value
-                    self.get_logger().info(f"No more events, waiting {interval_ms}ms")
+                    self.get_logger().info(f"No more events, resetting timer to {interval_ms}ms")
+                    old_period = self.polling_timer.timer_period_ns
                     self.polling_timer.timer_period_ns = interval_ms * 1000000  # Convert ms to ns
                     self.polling_timer.reset()
+                    self.get_logger().info(f"Timer period changed from {old_period}ns to {self.polling_timer.timer_period_ns}ns")
                 
             except Exception as e:
                 self.get_logger().error(f"Error in poll_events: {str(e)}")
@@ -333,6 +367,8 @@ class SuiIndexerNode(Node):
                 interval_ms = self.get_parameter('polling_interval_ms').value
                 self.polling_timer.timer_period_ns = interval_ms * 1000000
                 self.polling_timer.reset()
+                
+        self.get_logger().info("=== Completed poll_events cycle ===")
     
     def get_latest_cursor(self, tracker: EventTracker) -> Optional[dict]:
         """Get the latest cursor for an event tracker."""
@@ -389,10 +425,13 @@ class SuiIndexerNode(Node):
     
     async def handle_lock_objects(self, events: List[Dict], type_: str):
         """Handle lock object events."""
+        self.get_logger().info(f"Starting handle_lock_objects with {len(events)} events")
         updates = {}
         
-        for event in events:
+        for idx, event in enumerate(events):
+            self.get_logger().info(f"Processing lock event {idx + 1}/{len(events)}")
             if not event.event_type.startswith(type_):
+                self.get_logger().error(f"Invalid event type: {event.event_type}, expected: {type_}")
                 raise ValueError('Invalid event module origin')
                 
             data = event.parsed_json
@@ -404,9 +443,11 @@ class SuiIndexerNode(Node):
                 }
             
             if is_deletion_event:
+                self.get_logger().info(f"Processing deletion event for lock_id: {data['lock_id']}")
                 updates[data['lock_id']]['deleted'] = True
                 continue
             
+            self.get_logger().info(f"Processing creation/update event for lock_id: {data['lock_id']}")
             updates[data['lock_id']].update({
                 'keyId': data['key_id'],
                 'creator': data['creator'],
@@ -414,8 +455,10 @@ class SuiIndexerNode(Node):
             })
         
         # Update database
-        for update in updates.values():
+        self.get_logger().info(f"Updating database with {len(updates)} lock objects")
+        for lock_id, update in updates.items():
             try:
+                self.get_logger().info(f"Upserting lock object: {lock_id}")
                 await self.db.locked.upsert(
                     where={'objectId': update['objectId']},
                     data={
@@ -423,15 +466,20 @@ class SuiIndexerNode(Node):
                         'update': update
                     }
                 )
+                self.get_logger().info(f"Successfully upserted lock object: {lock_id}")
             except Exception as e:
-                self.get_logger().error(f"Error updating locked object: {str(e)}")
+                self.get_logger().error(f"Error updating locked object {lock_id}: {str(e)}")
+        self.get_logger().info("Completed handle_lock_objects")
     
     async def handle_escrow_objects(self, events: List[Dict], type_: str):
         """Handle escrow object events."""
+        self.get_logger().info(f"Starting handle_escrow_objects with {len(events)} events")
         updates = {}
         
-        for event in events:
+        for idx, event in enumerate(events):
+            self.get_logger().info(f"Processing escrow event {idx + 1}/{len(events)}")
             if not event.event_type.startswith(type_):
+                self.get_logger().error(f"Invalid event type: {event.event_type}, expected: {type_}")
                 raise ValueError('Invalid event module origin')
                 
             data = event.parsed_json
@@ -442,13 +490,16 @@ class SuiIndexerNode(Node):
                 }
             
             if event.event_type.endswith('::EscrowCancelled'):
+                self.get_logger().info(f"Processing cancellation event for escrow_id: {data['escrow_id']}")
                 updates[data['escrow_id']]['cancelled'] = True
                 continue
                 
             if event.event_type.endswith('::EscrowSwapped'):
+                self.get_logger().info(f"Processing swap event for escrow_id: {data['escrow_id']}")
                 updates[data['escrow_id']]['swapped'] = True
                 continue
             
+            self.get_logger().info(f"Processing creation/update event for escrow_id: {data['escrow_id']}")
             updates[data['escrow_id']].update({
                 'sender': data['sender'],
                 'recipient': data['recipient'],
@@ -457,8 +508,10 @@ class SuiIndexerNode(Node):
             })
         
         # Update database
-        for update in updates.values():
+        self.get_logger().info(f"Updating database with {len(updates)} escrow objects")
+        for escrow_id, update in updates.items():
             try:
+                self.get_logger().info(f"Upserting escrow object: {escrow_id}")
                 await self.db.escrow.upsert(
                     where={'objectId': update['objectId']},
                     data={
@@ -466,8 +519,10 @@ class SuiIndexerNode(Node):
                         'update': update
                     }
                 )
+                self.get_logger().info(f"Successfully upserted escrow object: {escrow_id}")
             except Exception as e:
-                self.get_logger().error(f"Error updating escrow object: {str(e)}")
+                self.get_logger().error(f"Error updating escrow object {escrow_id}: {str(e)}")
+        self.get_logger().info("Completed handle_escrow_objects")
 
     def destroy_node(self):
         """Clean up node resources."""
