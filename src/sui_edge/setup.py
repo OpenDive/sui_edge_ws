@@ -19,7 +19,7 @@ setup(
     ],
     install_requires=[
         'setuptools',
-        'pysui>=0.84.0',
+        'sui-py>=0.1.0',
     ],
     setup_requires=['setuptools'],
     python_requires='>=3.8',

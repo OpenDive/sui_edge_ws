@@ -23,7 +23,7 @@ setup(
     install_requires=[
         'setuptools',
         'prisma',  # Prisma Client Python
-        'pysui',   # Sui Python SDK
+        'sui-py>=0.1.0',  # New Sui Python SDK
         'python-dotenv',  # For environment configuration
         'websockets',  # For WebSocket support
     ],
