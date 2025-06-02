@@ -383,7 +383,10 @@ class SuiIndexerNode(Node):
                     # Extract event sequence for status reporting
                     last_seq = 0
                     if isinstance(events_page.next_cursor, dict):
-                        last_seq = events_page.next_cursor.get("eventSeq", 0)
+                        try:
+                            last_seq = int(events_page.next_cursor.get("eventSeq", 0))
+                        except (ValueError, TypeError):
+                            last_seq = 0
                     
                     self._publish_status(True, f"Processed {len(events)} events for {tracker.type}", last_seq)
                 else:
@@ -506,9 +509,9 @@ class SuiIndexerNode(Node):
         else:
             ros_event.event_data = "{}"
         
-        # Set transaction digest and event sequence
-        ros_event.tx_digest = sui_event.id.tx_digest
-        ros_event.event_seq = sui_event.id.event_seq
+        # Set transaction digest and event sequence from dictionary
+        ros_event.tx_digest = sui_event.id['txDigest']
+        ros_event.event_seq = int(sui_event.id['eventSeq'])
         
         # Parse package_id and module_name from event type
         # Format: package_id::module_name::event_name
@@ -529,7 +532,7 @@ class SuiIndexerNode(Node):
             status.timestamp = self.get_clock().now().to_msg()
             status.status = "RUNNING" if is_running else "STOPPED"
             status.message = message
-            status.last_processed_seq = last_seq
+            status.last_processed_seq = int(last_seq)
             self.status_pub.publish(status)
         except Exception as e:
             self.get_logger().error(f"Failed to publish status: {e}")
