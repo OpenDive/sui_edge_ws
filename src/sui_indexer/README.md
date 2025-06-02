@@ -24,7 +24,7 @@ ros2 launch sui_indexer indexer.launch.py "package_id:='YOUR_PACKAGE_ID'"
 
 For example:
 ```bash
-ros2 launch sui_indexer indexer.launch.py "package_id:='0xfe09cf0b3d77678b99250572624bf74fe3b12af915c5db95f0ed5d755612eb68'"
+ros2 launch sui_indexer indexer.launch.py "package_id:='0x052f4da5dddf486da555e6c6aea3818e8d8206931f74f7441be5417cf9eeb070'"
 ```
 
 Note: The package_id must be enclosed in quotes to ensure it's treated as a string.
