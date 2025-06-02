@@ -22,11 +22,15 @@ from sui_py.exceptions import SuiRPCError, SuiValidationError
 
 # Import event handlers
 try:
-    # Try relative import first (when installed as package)
-    from .handlers import handle_escrow_objects, handle_lock_objects
+    # Try direct package import (works for installed package)
+    from sui_indexer.handlers import handle_escrow_objects, handle_lock_objects
 except ImportError:
-    # Try direct import (when running from source)
-    from handlers import handle_escrow_objects, handle_lock_objects
+    try:
+        # Try relative import (works when run as module)
+        from .handlers import handle_escrow_objects, handle_lock_objects
+    except ImportError:
+        # Try direct import (works when running from source)
+        from handlers import handle_escrow_objects, handle_lock_objects
 
 @dataclass
 class EventExecutionResult:
